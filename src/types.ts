@@ -12,6 +12,7 @@ export interface Session {
   fileName: string
   tags: string[]
   customName: string | null
+  isDeleted?: boolean
 }
 
 // ─── 메시지 ──────────────────────────────────────────────

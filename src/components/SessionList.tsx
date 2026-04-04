@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { Search, RefreshCw, Loader2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Search, RefreshCw, Loader2, Trash2 } from 'lucide-react'
 import type { Session } from '../types'
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   onSearchChange: (q: string) => void
   isLoading: boolean
   onRefresh: () => void
+  onDelete: (id: string) => void
   formatRelativeTime: (date: string) => string
 }
 
@@ -21,6 +22,7 @@ export default function SessionList({
   onSearchChange,
   isLoading,
   onRefresh,
+  onDelete,
   formatRelativeTime,
 }: Props) {
   // M-2: useMemo로 렌더링마다 재계산 방지
@@ -80,6 +82,7 @@ export default function SessionList({
                   session={session}
                   isSelected={selectedSession?.id === session.id}
                   onSelect={() => onSelectSession(session)}
+                  onDelete={() => onDelete(session.id)}
                   relativeTime={formatRelativeTime(session.lastActivity)}
                 />
               ))}
@@ -96,38 +99,86 @@ function SessionItem({
   session,
   isSelected,
   onSelect,
+  onDelete,
   relativeTime,
 }: {
   session: Session
   isSelected: boolean
   onSelect: () => void
+  onDelete: () => void
   relativeTime: string
 }) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const displayTitle = session.customName || session.preview.slice(0, 60) || session.sessionId
   const projectName = session.project.split(/[\\/]/).pop() || session.project
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowDeleteConfirm(true)
+  }
+
+  const handleConfirmDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onDelete()
+  }
+
+  const handleCancelDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowDeleteConfirm(false)
+  }
 
   return (
     <button
       onClick={onSelect}
-      className={`w-full text-left px-3 py-2.5 border-b border-slate-800 transition-colors ${
+      className={`w-full text-left px-3 py-2.5 border-b border-slate-800 transition-colors group relative ${
         isSelected
           ? 'bg-brand-900/50 border-l-2 border-l-brand-500'
           : 'hover:bg-slate-800/60'
       }`}
     >
-      <p className="text-sm text-slate-200 truncate leading-snug">{displayTitle}</p>
-      <div className="flex items-center gap-2 mt-1">
-        <span className="text-[11px] text-slate-500 truncate flex-1">{projectName}</span>
-        <span className="text-[10px] text-slate-600 shrink-0">{relativeTime}</span>
-      </div>
-      {session.tags.length > 0 && (
-        <div className="flex gap-1 mt-1 flex-wrap">
-          {session.tags.slice(0, 3).map(tag => (
-            <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-brand-900/40 text-brand-300 rounded-full">
-              #{tag}
-            </span>
-          ))}
+      {showDeleteConfirm ? (
+        <div className="flex items-center justify-between gap-2 py-0.5">
+          <span className="text-xs text-slate-400">휴지통으로 이동?</span>
+          <div className="flex gap-1">
+            <button
+              onClick={handleConfirmDelete}
+              className="px-2 py-0.5 bg-red-700 hover:bg-red-600 text-white text-[11px] rounded"
+            >
+              삭제
+            </button>
+            <button
+              onClick={handleCancelDelete}
+              className="px-2 py-0.5 bg-slate-600 hover:bg-slate-500 text-slate-200 text-[11px] rounded"
+            >
+              취소
+            </button>
+          </div>
         </div>
+      ) : (
+        <>
+          <p className="text-sm text-slate-200 truncate leading-snug pr-6">{displayTitle}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-[11px] text-slate-500 truncate flex-1">{projectName}</span>
+            <span className="text-[10px] text-slate-600 shrink-0">{relativeTime}</span>
+          </div>
+          {session.tags.length > 0 && (
+            <div className="flex gap-1 mt-1 flex-wrap">
+              {session.tags.slice(0, 3).map(tag => (
+                <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-brand-900/40 text-brand-300 rounded-full">
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* 호버 시 삭제 버튼 */}
+          <button
+            onClick={handleDeleteClick}
+            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all"
+            title="휴지통으로 이동"
+          >
+            <Trash2 size={13} />
+          </button>
+        </>
       )}
     </button>
   )

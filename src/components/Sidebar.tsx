@@ -1,15 +1,13 @@
-import { MessageSquare, LayoutDashboard, Settings, Tag, RefreshCw } from 'lucide-react'
-import type { AppSettings } from '../types'
+import { MessageSquare, LayoutDashboard, Settings, Tag, Trash2 } from 'lucide-react'
 
 interface Props {
-  activeView: 'sessions' | 'dashboard' | 'settings'
-  onViewChange: (v: 'sessions' | 'dashboard' | 'settings') => void
+  activeView: 'sessions' | 'dashboard' | 'settings' | 'trash'
+  onViewChange: (v: 'sessions' | 'dashboard' | 'settings' | 'trash') => void
   allTags: string[]
   selectedTag: string | null
   onTagSelect: (tag: string | null) => void
   sessionCount: number
-  settings: AppSettings
-  onSettingsChange: (s: AppSettings) => void
+  trashCount: number
 }
 
 export default function Sidebar({
@@ -19,11 +17,13 @@ export default function Sidebar({
   selectedTag,
   onTagSelect,
   sessionCount,
+  trashCount,
 }: Props) {
   const navItems = [
     { id: 'sessions' as const, icon: MessageSquare, label: '세션', badge: sessionCount },
     { id: 'dashboard' as const, icon: LayoutDashboard, label: '대시보드' },
     { id: 'settings' as const, icon: Settings, label: '설정' },
+    { id: 'trash' as const, icon: Trash2, label: '휴지통', badge: trashCount },
   ]
 
   return (

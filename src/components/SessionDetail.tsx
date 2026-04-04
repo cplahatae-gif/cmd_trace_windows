@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X } from 'lucide-react'
+import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2 } from 'lucide-react'
 import type { Session, Message, SessionInsights, AppSettings } from '../types'
 import MessageView from './MessageView'
 import InsightsView from './InsightsView'
@@ -8,11 +8,12 @@ interface Props {
   session: Session
   settings: AppSettings
   onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[] }) => Promise<void>
+  onDelete: (id: string) => void
 }
 
 type Tab = 'messages' | 'insights'
 
-export default function SessionDetail({ session, settings, onUpdateMeta }: Props) {
+export default function SessionDetail({ session, settings, onUpdateMeta, onDelete }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [insights, setInsights] = useState<SessionInsights | null>(null)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
@@ -24,6 +25,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta }: Props
   const [isResuming, setIsResuming] = useState(false)
   const [messageError, setMessageError] = useState<string | null>(null)
   const [insightError, setInsightError] = useState<string | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const loadMessages = useCallback(async () => {
     if (!window.electronAPI) return
@@ -207,6 +209,33 @@ export default function SessionDetail({ session, settings, onUpdateMeta }: Props
           >
             ⊞ 리셋
           </button>
+          <div className="ml-auto">
+            {showDeleteConfirm ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-400">휴지통으로 이동?</span>
+                <button
+                  onClick={() => onDelete(session.id)}
+                  className="px-2 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded"
+                >
+                  삭제
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-2 py-1 bg-slate-600 hover:bg-slate-500 text-slate-200 text-xs rounded"
+                >
+                  취소
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="flex items-center gap-1.5 px-2 py-1.5 text-slate-600 hover:text-red-400 hover:bg-slate-700 text-xs rounded-lg transition-colors"
+                title="세션 삭제"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
