@@ -138,7 +138,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
             </div>
           ) : (
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              <h2 className="text-sm font-semibold text-ink-primary truncate flex-1 selectable">{displayTitle}</h2>
+              <h2 className="text-base font-semibold text-ink-primary truncate flex-1 selectable">{displayTitle}</h2>
               <button
                 onClick={() => { setEditName(session.customName || ''); setIsEditingName(true) }}
                 className="text-ink-faint hover:text-ink-muted shrink-0 p-1 rounded hover:bg-surface-subtle"
@@ -150,7 +150,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
         </div>
 
         {/* 메타 정보 */}
-        <div className="flex items-center gap-2 text-[11px] text-ink-muted mb-2">
+        <div className="flex items-center gap-2 text-xs text-ink-muted mb-2">
           <span className="truncate">{projectName}</span>
           <span className="text-ink-faint">·</span>
           <span>{session.messageCount}개</span>
@@ -244,13 +244,13 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
           <button
             key={id}
             onClick={() => handleTabChange(id)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === id
                 ? 'border-brand-500 text-brand-600'
                 : 'border-transparent text-ink-muted hover:text-ink-secondary'
             }`}
           >
-            <Icon size={13} />
+            <Icon size={15} />
             {label}
           </button>
         ))}

@@ -23,8 +23,8 @@ export default function InsightsView({ insights }: Props) {
             { label: '캐시', value: totalTokenUsage.cacheReadInputTokens.toLocaleString(), accent: 'text-amber-600', bg: 'bg-amber-50' },
           ].map(({ label, value, accent, bg }) => (
             <div key={label} className={`${bg} rounded-xl p-3 border border-[rgba(0,0,0,0.06)]`}>
-              <div className={`text-lg font-bold ${accent} leading-tight`}>{value}</div>
-              <div className="text-[11px] text-ink-muted mt-0.5">{label}</div>
+              <div className={`text-xl font-bold ${accent} leading-tight`}>{value}</div>
+              <div className="text-xs text-ink-muted mt-0.5">{label}</div>
             </div>
           ))}
         </div>
@@ -87,7 +87,7 @@ export default function InsightsView({ insights }: Props) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-2.5">{title}</h3>
+      <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-widest mb-2.5">{title}</h3>
       {children}
     </div>
   )

@@ -198,12 +198,12 @@ export default function App() {
 // ─── 빈 상태 ──────────────────────────────────────────────
 function EmptyState({ onRefresh }: { onRefresh: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-ink-muted gap-3 bg-surface-soft">
-      <div className="w-14 h-14 rounded-2xl bg-white border border-[rgba(0,0,0,0.08)] shadow-card flex items-center justify-center text-2xl">
+    <div className="flex flex-col items-center justify-center h-full text-ink-muted gap-4 bg-surface-soft">
+      <div className="w-16 h-16 rounded-2xl bg-white border border-[rgba(0,0,0,0.08)] shadow-card flex items-center justify-center text-3xl">
         💬
       </div>
-      <p className="text-sm font-medium text-ink-secondary">세션을 선택하세요</p>
-      <p className="text-xs text-ink-muted">왼쪽 목록에서 세션을 클릭하면 대화 내용을 볼 수 있습니다</p>
+      <p className="text-base font-semibold text-ink-secondary">세션을 선택하세요</p>
+      <p className="text-sm text-ink-muted">왼쪽 목록에서 세션을 클릭하면 대화 내용을 볼 수 있습니다</p>
       <button
         onClick={onRefresh}
         className="mt-1 btn-primary"

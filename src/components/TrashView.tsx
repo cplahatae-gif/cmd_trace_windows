@@ -11,7 +11,7 @@ export default function TrashView({ sessions, onRestore }: Props) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-ink-muted gap-3 bg-surface-soft">
         <span className="text-4xl">🗑️</span>
-        <p className="text-sm text-ink-muted">휴지통이 비어 있습니다</p>
+        <p className="text-base text-ink-muted">휴지통이 비어 있습니다</p>
       </div>
     )
   }
@@ -20,8 +20,8 @@ export default function TrashView({ sessions, onRestore }: Props) {
     <div className="p-6 h-full overflow-y-auto scrollbar-thin bg-surface-soft">
       <div className="max-w-2xl">
         <div className="flex items-center gap-2 mb-5">
-          <h2 className="text-base font-semibold text-ink-primary">휴지통</h2>
-          <span className="text-[11px] font-medium text-ink-muted bg-surface-subtle px-2 py-0.5 rounded-full">{sessions.length}개</span>
+          <h2 className="text-lg font-semibold text-ink-primary">휴지통</h2>
+          <span className="text-xs font-medium text-ink-muted bg-surface-subtle px-2 py-0.5 rounded-full">{sessions.length}개</span>
         </div>
 
         <div className="space-y-1.5">
