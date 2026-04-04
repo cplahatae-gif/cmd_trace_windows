@@ -1,48 +1,43 @@
-# Xcode
-*.xcuserstate
-*.xcworkspace
-xcuserdata/
-DerivedData/
+# 의존성
+node_modules/
 
-# Swift Package Manager
-.build/
-.swiftpm/
-Package.resolved
+# 빌드 결과물 (재빌드 가능)
+dist/
+dist-electron/
+release/
 
-# macOS
-.DS_Store
-*.dSYM.zip
-*.dSYM
-
-# Build artifacts
-build/
-*.app
-*.ipa
-*.o
-*.a
-*.dylib
-
-# IDE
-.idea/
-*.xcodeproj/xcuserdata/
-
-# Debug logs
+# 로그
 *.log
-firebase-debug.log
+npm-debug.log*
+electron_out.txt
+build.log
 
-# Secrets & Environment
+# 환경변수
 .env
 .env.local
-*.pem
-*.p12
-*.key
+.env.*.local
 
-# Distribution
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# macOS/Swift 잔재 (원본 저장소에서 클론)
+.build/
+.swiftpm/
+*.xcuserstate
+DerivedData/
+*.app
 *.dmg
 *.pkg
-*.zip
+*.dSYM
 
-# Test artifacts
-TestResults/
-coverage/
-.playwright-mcp/
+# 임시 파일
+*.tmp
+*.temp
