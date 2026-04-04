@@ -1,5 +1,5 @@
-import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } from 'electron'
-import { spawn } from 'child_process'
+import { app, BrowserWindow, ipcMain, shell, Tray } from 'electron'
+import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
@@ -9,11 +9,36 @@ const isDev = process.env.ELECTRON_DEV === 'true'
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
-// 세션 재개 패널 카운터 (0~3, 2×2 그리드 순환)
-// 0=왼쪽, 1=오른쪽, 2=왼쪽 아래, 3=오른쪽 아래
-let sessionPaneCount = 0
-const WT_WINDOW = 'cmdtrace-sessions' // 전용 WT named window
+// ─── 상수 (중복 제거) ──────────────────────────────────────
+const CLAUDE_BASE    = path.join(os.homedir(), '.claude', 'projects')
+const META_PATH      = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json')
+const SETTINGS_PATH  = path.join(os.homedir(), '.claude', 'cmdtrace-settings.json')
 
+// 세션 재개 패널 카운터 (0~3, 2×2 그리드 순환)
+let sessionPaneCount = 0
+const WT_WINDOW = 'cmdtrace-sessions'
+
+// ─── 보안 유틸리티 ──────────────────────────────────────────
+
+/** C-1: sessionId 검증 — 영문숫자·하이픈·언더스코어만 허용 */
+function sanitizeSessionId(id: string): string | null {
+  if (typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id)) return id
+  return null
+}
+
+/** C-2 / C-4: 경로가 특정 베이스 디렉토리 안에 있는지 검증 (경로 순회 방지) */
+function validatePathInBase(filePath: string, baseDir: string): boolean {
+  const resolved    = path.resolve(filePath)
+  const resolvedBase = path.resolve(baseDir)
+  return resolved.startsWith(resolvedBase + path.sep) || resolved === resolvedBase
+}
+
+/** C-2: 경로가 실제로 존재하는 디렉토리인지 검증 */
+function isValidDirectory(dirPath: string): boolean {
+  try { return fs.statSync(dirPath).isDirectory() } catch { return false }
+}
+
+// ─── 윈도우 생성 ───────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -30,151 +55,186 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
-    // DevTools는 필요할 때만 수동으로 열기 (Ctrl+Shift+I)
-    // mainWindow.webContents.openDevTools()
   } else {
     const indexPath = path.join(__dirname, '../dist/index.html')
     mainWindow.loadFile(indexPath)
-    // 로딩 에러 시 콘솔에 출력
     mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
       console.error('로드 실패:', code, desc, indexPath)
     })
   }
 
-  mainWindow.on('closed', () => {
-    mainWindow = null
-  })
+  mainWindow.on('closed', () => { mainWindow = null })
 }
 
-// IPC: Claude Code 세션 파일 읽기
+// ─── IPC: 세션 목록 ────────────────────────────────────────
 ipcMain.handle('sessions:load', async (_event, agentType: string) => {
-  const homeDir = os.homedir()
-
   if (agentType === 'claude') {
-    // Windows: ~/.claude/projects/ (Claude Code는 Windows에서도 동일 경로 사용)
-    const claudeBase = path.join(homeDir, '.claude', 'projects')
-    return loadClaudeSessions(claudeBase)
+    return loadClaudeSessions(CLAUDE_BASE)
   } else if (agentType === 'opencode') {
-    // OpenCode Windows 경로
-    const openCodeBase = path.join(homeDir, '.local', 'share', 'opencode', 'storage', 'message')
+    const openCodeBase = path.join(os.homedir(), '.local', 'share', 'opencode', 'storage', 'message')
     return loadOpenCodeSessions(openCodeBase)
   }
   return []
 })
 
-// IPC: 특정 세션의 메시지 읽기
+// ─── IPC: 세션 메시지 (C-3 + C-4 수정) ────────────────────
 ipcMain.handle('session:messages', async (_event, projectFolder: string, fileName: string) => {
-  const homeDir = os.homedir()
-  const claudeBase = path.join(homeDir, '.claude', 'projects')
-  const filePath = path.join(claudeBase, projectFolder, fileName)
+  // OpenCode 세션: projectFolder가 절대경로
+  if (path.isAbsolute(projectFolder)) {
+    return loadOpenCodeMessages(projectFolder)
+  }
+  // Claude 세션: 경로 순회 방지 검증
+  const filePath = path.join(CLAUDE_BASE, projectFolder, fileName)
+  if (!validatePathInBase(filePath, CLAUDE_BASE)) {
+    console.error('[보안] 경로 순회 차단:', filePath)
+    return []
+  }
   return loadClaudeMessages(filePath)
 })
 
-// IPC: 세션 인사이트 읽기 (토큰, 툴 사용 등)
+// ─── IPC: 세션 인사이트 (C-3 + C-4 수정) ──────────────────
 ipcMain.handle('session:insights', async (_event, projectFolder: string, fileName: string) => {
-  const homeDir = os.homedir()
-  const claudeBase = path.join(homeDir, '.claude', 'projects')
-  const filePath = path.join(claudeBase, projectFolder, fileName)
+  if (path.isAbsolute(projectFolder)) {
+    return emptyInsights() // OpenCode는 인사이트 미지원
+  }
+  const filePath = path.join(CLAUDE_BASE, projectFolder, fileName)
+  if (!validatePathInBase(filePath, CLAUDE_BASE)) {
+    console.error('[보안] 경로 순회 차단:', filePath)
+    return emptyInsights()
+  }
   return loadSessionInsights(filePath)
 })
 
-// IPC: Windows Terminal에서 세션 재개
+// ─── IPC: 세션 재개 (C-1 수정) ────────────────────────────
 ipcMain.handle('session:resume', async (_event, sessionId: string, projectPath: string, terminal: string, bypass: boolean) => {
-  const resumeCmd = bypass
-    ? `claude -r ${sessionId} --dangerously-skip-permissions`
-    : `claude -r ${sessionId}`
+  // sessionId 검증 (C-1: 명령어 인젝션 방지)
+  const safeId = sanitizeSessionId(sessionId)
+  if (!safeId) {
+    console.error('[보안] 유효하지 않은 sessionId:', sessionId)
+    return { success: false, error: 'Invalid session ID' }
+  }
 
-  const cdCmd = projectPath ? `cd /d "${projectPath}" && ` : ''
-  const fullCmd = `${cdCmd}${resumeCmd}`
+  // projectPath 검증 (빈 문자열은 허용, 있으면 실제 디렉토리여야 함)
+  if (projectPath && !isValidDirectory(projectPath)) {
+    console.error('[보안] 유효하지 않은 projectPath:', projectPath)
+    return { success: false, error: 'Invalid project path' }
+  }
+
+  // 안전한 claude 명령어 인수 배열 (문자열 연결 금지)
+  const claudeArgs = bypass
+    ? ['claude', '-r', safeId, '--dangerously-skip-permissions']
+    : ['claude', '-r', safeId]
+  const resumeCmd = claudeArgs.join(' ') // safeId는 알파뉴메릭만 허용되므로 안전
 
   const dirArgs = projectPath ? ['-d', projectPath] : []
+
   const shellArgs = terminal === 'powershell'
     ? ['powershell', '-NoExit', '-Command', resumeCmd]
     : ['cmd', '/k', resumeCmd]
 
   const pane = sessionPaneCount
-  sessionPaneCount = (sessionPaneCount + 1) % 4 // 0→1→2→3→0 순환
+  sessionPaneCount = (sessionPaneCount + 1) % 4
+
+  const spawnAndWatch = (cmd: string, args: string[], opts: object): void => {
+    const proc: ChildProcess = spawn(cmd, args, opts)
+    proc.on('error', (err) => console.error(`[spawn] ${cmd} 오류:`, err))
+  }
 
   switch (terminal) {
     case 'wt':
     case 'powershell': {
-      // 2×2 그리드 패턴
-      // pane 0: 왼쪽 (새 전용 탭으로 시작)
-      // pane 1: 오른쪽 (세로 분할)
-      // pane 2: 왼쪽 아래 (pane 0 가로 분할)
-      // pane 3: 오른쪽 아래 (pane 1 가로 분할)
       let wtArgs: string[]
-
       if (pane === 0) {
-        // 전용 named window에 새 탭으로 열기 (왼쪽 = 첫 번째 패널)
         wtArgs = ['-w', WT_WINDOW, 'nt', '--title', 'Session 1', ...dirArgs, ...shellArgs]
       } else if (pane === 1) {
-        // 현재 패널 세로 분할 → 오른쪽에 새 패널
         wtArgs = ['-w', WT_WINDOW, 'sp', '-V', '--title', 'Session 2', ...dirArgs, ...shellArgs]
       } else if (pane === 2) {
-        // pane 0(왼쪽) 기준 가로 분할 → 왼쪽 아래
-        wtArgs = [
-          '-w', WT_WINDOW,
-          'mf', 'left',   // 왼쪽 패널로 포커스 이동
-          ';', 'sp', '-H', '--title', 'Session 3', ...dirArgs, ...shellArgs,
-        ]
+        wtArgs = ['-w', WT_WINDOW, 'mf', 'left', ';', 'sp', '-H', '--title', 'Session 3', ...dirArgs, ...shellArgs]
       } else {
-        // pane 1(오른쪽) 기준 가로 분할 → 오른쪽 아래
-        wtArgs = [
-          '-w', WT_WINDOW,
-          'mf', 'right',  // 오른쪽 패널로 포커스 이동
-          ';', 'sp', '-H', '--title', 'Session 4', ...dirArgs, ...shellArgs,
-        ]
+        wtArgs = ['-w', WT_WINDOW, 'mf', 'right', ';', 'sp', '-H', '--title', 'Session 4', ...dirArgs, ...shellArgs]
       }
-
-      spawn('wt', wtArgs, { detached: true, shell: false })
+      spawnAndWatch('wt', wtArgs, { detached: true, shell: false })
       break
     }
     case 'cmd':
-    default:
-      spawn('cmd', ['/c', 'start', 'cmd', '/k', fullCmd], { detached: true, shell: true })
+    default: {
+      // shell: false 사용, start /d 로 작업 디렉토리 지정
+      const startArgs = projectPath
+        ? ['/c', 'start', '/d', projectPath, 'cmd', '/k', resumeCmd]
+        : ['/c', 'start', 'cmd', '/k', resumeCmd]
+      spawnAndWatch('cmd', startArgs, { detached: true, shell: false })
       break
+    }
   }
   return { success: true }
 })
 
-// IPC: 패널 카운터 리셋 (새로 4-pane 레이아웃 시작)
+// ─── IPC: 패널 카운터 리셋 ─────────────────────────────────
 ipcMain.handle('session:resetPanes', () => {
   sessionPaneCount = 0
   return { success: true }
 })
 
-// IPC: 파일 탐색기에서 폴더 열기
+// ─── IPC: 폴더 열기 (C-2 수정) ────────────────────────────
 ipcMain.handle('shell:openFolder', async (_event, folderPath: string) => {
-  shell.openPath(folderPath)
+  if (!isValidDirectory(folderPath)) {
+    console.error('[보안] 유효하지 않은 폴더 경로:', folderPath)
+    return
+  }
+  await shell.openPath(folderPath)
 })
 
-// IPC: 영구 메타데이터 저장 (커스텀 이름, 태그)
+// ─── IPC: 메타데이터 저장/불러오기 ────────────────────────
 ipcMain.handle('metadata:save', async (_event, data: Record<string, unknown>) => {
-  const metaPath = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json')
-  fs.writeFileSync(metaPath, JSON.stringify(data, null, 2), 'utf-8')
-  return { success: true }
+  try {
+    fs.writeFileSync(META_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    return { success: true }
+  } catch (err) {
+    console.error('메타데이터 저장 실패:', err)
+    return { success: false }
+  }
 })
 
 ipcMain.handle('metadata:load', async () => {
-  const metaPath = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json')
-  if (!fs.existsSync(metaPath)) return {}
+  if (!fs.existsSync(META_PATH)) return {}
   try {
-    return JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+    return JSON.parse(fs.readFileSync(META_PATH, 'utf-8'))
   } catch {
     return {}
   }
 })
 
-// ─────────────────────────────────────────────────────
-// Claude Code 세션 로더
-// ─────────────────────────────────────────────────────
+// ─── IPC: 설정 저장/불러오기 (H-1: 설정 영속성) ───────────
+ipcMain.handle('settings:save', async (_event, data: Record<string, unknown>) => {
+  try {
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    return { success: true }
+  } catch (err) {
+    console.error('설정 저장 실패:', err)
+    return { success: false }
+  }
+})
+
+ipcMain.handle('settings:load', async () => {
+  if (!fs.existsSync(SETTINGS_PATH)) return null
+  try {
+    return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'))
+  } catch {
+    return null
+  }
+})
+
+// ─── Claude 세션 로더 ──────────────────────────────────────
 function loadClaudeSessions(claudeBase: string): SessionData[] {
   if (!fs.existsSync(claudeBase)) return []
 
   const sessions: SessionData[] = []
-  const projectDirs = fs.readdirSync(claudeBase, { withFileTypes: true })
-    .filter(d => d.isDirectory())
+  let projectDirs: fs.Dirent[]
+  try {
+    projectDirs = fs.readdirSync(claudeBase, { withFileTypes: true }).filter(d => d.isDirectory())
+  } catch {
+    return []
+  }
 
   for (const dir of projectDirs) {
     const dirPath = path.join(claudeBase, dir.name)
@@ -185,12 +245,10 @@ function loadClaudeSessions(claudeBase: string): SessionData[] {
       for (const file of files) {
         const filePath = path.join(dirPath, file)
         const session = parseClaudeSession(filePath, dir.name)
-        if (session && session.messageCount > 0) {
-          sessions.push(session)
-        }
+        if (session && session.messageCount > 0) sessions.push(session)
       }
     } catch {
-      // 읽기 실패한 디렉토리는 건너뜀
+      // 읽기 실패한 디렉토리 건너뜀
     }
   }
 
@@ -204,8 +262,7 @@ function parseClaudeSession(filePath: string, projectFolder: string): SessionDat
 
     const fileName = path.basename(filePath)
     let sessionId = fileName.replace('.jsonl', '')
-    let preview = ''
-    let cwd = ''
+    let preview = '', cwd = ''
     let firstTimestamp: string | null = null
     let lastTimestamp: string | null = null
     let messageCount = 0
@@ -213,10 +270,7 @@ function parseClaudeSession(filePath: string, projectFolder: string): SessionDat
     for (const line of lines) {
       try {
         const json = JSON.parse(line)
-
-        if (json.sessionId && sessionId === fileName.replace('.jsonl', '')) {
-          sessionId = json.sessionId
-        }
+        if (json.sessionId && sessionId === fileName.replace('.jsonl', '')) sessionId = json.sessionId
         if (!cwd && json.cwd) cwd = json.cwd
         if (json.timestamp) {
           if (!firstTimestamp) firstTimestamp = json.timestamp
@@ -225,24 +279,17 @@ function parseClaudeSession(filePath: string, projectFolder: string): SessionDat
         if (!preview && json.type === 'user' && json.message?.content) {
           preview = String(json.message.content).slice(0, 200)
         }
-        if (json.type === 'user' || json.type === 'assistant') {
-          messageCount++
-        }
-      } catch {
-        // JSON 파싱 실패 라인 건너뜀
-      }
+        if (json.type === 'user' || json.type === 'assistant') messageCount++
+      } catch { /* JSON 파싱 실패 건너뜀 */ }
     }
 
-    // Windows용 프로젝트명 변환: -Users-username-... 형식 처리
     const username = os.userInfo().username
     const projectName = projectFolder
       .replace(new RegExp(`-Users-${username}-`, 'g'), '')
       .replace(/-/g, '/')
 
-    const uniqueId = `${projectFolder}/${sessionId}`
-
     return {
-      id: uniqueId,
+      id: `${projectFolder}/${sessionId}`,
       sessionId,
       title: preview || sessionId,
       project: cwd || projectName,
@@ -260,10 +307,18 @@ function parseClaudeSession(filePath: string, projectFolder: string): SessionDat
   }
 }
 
+// ─── Claude 메시지 로더 (I-3: try/catch 추가) ──────────────
 function loadClaudeMessages(filePath: string): MessageData[] {
   if (!fs.existsSync(filePath)) return []
 
-  const content = fs.readFileSync(filePath, 'utf-8')
+  let content: string
+  try {
+    content = fs.readFileSync(filePath, 'utf-8')
+  } catch (err) {
+    console.error('파일 읽기 실패:', filePath, err)
+    return []
+  }
+
   const lines = content.split('\n').filter(l => l.trim())
   const messages: MessageData[] = []
 
@@ -275,8 +330,7 @@ function loadClaudeMessages(filePath: string): MessageData[] {
       const msgObj = json.message
       if (!msgObj) continue
 
-      let msgContent = ''
-      let isToolUse = false
+      let msgContent = '', isToolUse = false
 
       if (typeof msgObj.content === 'string') {
         msgContent = msgObj.content
@@ -293,84 +347,104 @@ function loadClaudeMessages(filePath: string): MessageData[] {
       if (!msgContent) continue
 
       messages.push({
-        role: json.type,
+        role: json.type as 'user' | 'assistant',  // I-4: 타입 명시
         content: msgContent,
         timestamp: json.timestamp || null,
         modelId: msgObj.model || null,
         agentId: json.agentId || null,
         isToolUse,
       })
-    } catch {
-      // 파싱 실패 건너뜀
-    }
+    } catch { /* 파싱 실패 건너뜀 */ }
   }
 
   return messages
 }
 
+// ─── OpenCode 메시지 로더 (C-3: 신규 추가) ─────────────────
+function loadOpenCodeMessages(dirPath: string): MessageData[] {
+  if (!fs.existsSync(dirPath)) return []
+
+  const messages: MessageData[] = []
+  try {
+    const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.json')).sort()
+    for (const file of files) {
+      try {
+        const json = JSON.parse(fs.readFileSync(path.join(dirPath, file), 'utf-8'))
+        if (json.role !== 'user' && json.role !== 'assistant') continue
+
+        let content = ''
+        if (typeof json.content === 'string') {
+          content = json.content
+        } else if (Array.isArray(json.content)) {
+          for (const item of json.content) {
+            if (item.type === 'text') content += item.text || ''
+            else if (item.type === 'tool_use') content += `[Tool: ${item.name}]`
+          }
+        }
+        if (!content) continue
+
+        messages.push({
+          role: json.role as 'user' | 'assistant',
+          content,
+          timestamp: json.time?.created ? new Date(json.time.created).toISOString() : null,
+          modelId: json.model || null,
+          agentId: null,
+          isToolUse: false,
+        })
+      } catch { /* 개별 파일 파싱 실패 건너뜀 */ }
+    }
+  } catch { /* 디렉토리 읽기 실패 */ }
+
+  return messages
+}
+
+// ─── 인사이트 로더 ─────────────────────────────────────────
 function loadSessionInsights(filePath: string): InsightsData {
   if (!fs.existsSync(filePath)) return emptyInsights()
 
-  const content = fs.readFileSync(filePath, 'utf-8')
-  const lines = content.split('\n').filter(l => l.trim())
+  let content: string
+  try {
+    content = fs.readFileSync(filePath, 'utf-8')
+  } catch {
+    return emptyInsights()
+  }
 
+  const lines = content.split('\n').filter(l => l.trim())
   const toolCounts: Record<string, number> = {}
-  let totalInput = 0, totalOutput = 0, totalCacheCreate = 0, totalCacheRead = 0
-  let totalDurationMs = 0
+  let totalInput = 0, totalOutput = 0, totalCacheCreate = 0, totalCacheRead = 0, totalDurationMs = 0
   const modelUsage: Record<string, { count: number; input: number; output: number }> = {}
 
   for (const line of lines) {
     try {
       const json = JSON.parse(line)
-
       if (json.type === 'assistant') {
         const msg = json.message
         if (msg?.content && Array.isArray(msg.content)) {
           for (const item of msg.content) {
-            if (item.type === 'tool_use') {
-              toolCounts[item.name] = (toolCounts[item.name] || 0) + 1
-            }
+            if (item.type === 'tool_use') toolCounts[item.name] = (toolCounts[item.name] || 0) + 1
           }
         }
         if (msg?.usage) {
-          totalInput += msg.usage.input_tokens || 0
-          totalOutput += msg.usage.output_tokens || 0
+          totalInput       += msg.usage.input_tokens || 0
+          totalOutput      += msg.usage.output_tokens || 0
           totalCacheCreate += msg.usage.cache_creation_input_tokens || 0
-          totalCacheRead += msg.usage.cache_read_input_tokens || 0
-
+          totalCacheRead   += msg.usage.cache_read_input_tokens || 0
           if (msg.model) {
             if (!modelUsage[msg.model]) modelUsage[msg.model] = { count: 0, input: 0, output: 0 }
             modelUsage[msg.model].count++
-            modelUsage[msg.model].input += msg.usage.input_tokens || 0
+            modelUsage[msg.model].input  += msg.usage.input_tokens || 0
             modelUsage[msg.model].output += msg.usage.output_tokens || 0
           }
         }
       }
-
-      if (json.type === 'system' && json.subtype === 'turn_duration') {
-        totalDurationMs += json.durationMs || 0
-      }
-    } catch {
-      // 파싱 실패 건너뜀
-    }
+      if (json.type === 'system' && json.subtype === 'turn_duration') totalDurationMs += json.durationMs || 0
+    } catch { /* 파싱 실패 건너뜀 */ }
   }
 
   return {
-    toolStatistics: Object.entries(toolCounts)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count),
-    totalTokenUsage: {
-      inputTokens: totalInput,
-      outputTokens: totalOutput,
-      cacheCreationInputTokens: totalCacheCreate,
-      cacheReadInputTokens: totalCacheRead,
-    },
-    modelUsage: Object.entries(modelUsage).map(([model, data]) => ({
-      model,
-      messageCount: data.count,
-      inputTokens: data.input,
-      outputTokens: data.output,
-    })),
+    toolStatistics: Object.entries(toolCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+    totalTokenUsage: { inputTokens: totalInput, outputTokens: totalOutput, cacheCreationInputTokens: totalCacheCreate, cacheReadInputTokens: totalCacheRead },
+    modelUsage: Object.entries(modelUsage).map(([model, data]) => ({ model, messageCount: data.count, inputTokens: data.input, outputTokens: data.output })),
     totalDurationMs,
   }
 }
@@ -384,29 +458,34 @@ function emptyInsights(): InsightsData {
   }
 }
 
+// ─── OpenCode 세션 로더 ────────────────────────────────────
 function loadOpenCodeSessions(openCodeBase: string): SessionData[] {
   if (!fs.existsSync(openCodeBase)) return []
 
   const sessions: SessionData[] = []
-  const dirs = fs.readdirSync(openCodeBase, { withFileTypes: true })
-    .filter(d => d.isDirectory() && d.name.startsWith('ses_'))
+  let dirs: fs.Dirent[]
+  try {
+    dirs = fs.readdirSync(openCodeBase, { withFileTypes: true }).filter(d => d.isDirectory() && d.name.startsWith('ses_'))
+  } catch {
+    return []
+  }
 
   for (const dir of dirs) {
     const dirPath = path.join(openCodeBase, dir.name)
     try {
       const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.json'))
-      let messageCount = 0
-      let firstTimestamp: string | null = null
-      let lastTimestamp: string | null = null
+      let messageCount = 0, firstTimestamp: string | null = null, lastTimestamp: string | null = null
 
       for (const file of files) {
-        const json = JSON.parse(fs.readFileSync(path.join(dirPath, file), 'utf-8'))
-        if (json.role === 'user' || json.role === 'assistant') messageCount++
-        if (json.time?.created) {
-          const t = new Date(json.time.created).toISOString()
-          if (!firstTimestamp) firstTimestamp = t
-          lastTimestamp = t
-        }
+        try {
+          const json = JSON.parse(fs.readFileSync(path.join(dirPath, file), 'utf-8'))
+          if (json.role === 'user' || json.role === 'assistant') messageCount++
+          if (json.time?.created) {
+            const t = new Date(json.time.created).toISOString()
+            if (!firstTimestamp) firstTimestamp = t
+            lastTimestamp = t
+          }
+        } catch { /* 파싱 실패 건너뜀 */ }
       }
 
       if (messageCount === 0) continue
@@ -420,20 +499,18 @@ function loadOpenCodeSessions(openCodeBase: string): SessionData[] {
         messageCount,
         lastActivity: lastTimestamp || new Date().toISOString(),
         firstTimestamp,
-        projectFolder: dirPath,
+        projectFolder: dirPath, // 절대경로로 저장 (session:messages 분기 조건)
         fileName: dir.name,
         tags: [],
         customName: null,
       })
-    } catch {
-      // 읽기 실패 건너뜀
-    }
+    } catch { /* 디렉토리 읽기 실패 건너뜀 */ }
   }
 
   return sessions.sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime())
 }
 
-// 타입 정의
+// ─── 타입 정의 ─────────────────────────────────────────────
 interface SessionData {
   id: string
   sessionId: string
@@ -450,7 +527,7 @@ interface SessionData {
 }
 
 interface MessageData {
-  role: string
+  role: 'user' | 'assistant'  // I-4: string → union 타입
   content: string
   timestamp: string | null
   modelId: string | null
@@ -460,16 +537,12 @@ interface MessageData {
 
 interface InsightsData {
   toolStatistics: { name: string; count: number }[]
-  totalTokenUsage: {
-    inputTokens: number
-    outputTokens: number
-    cacheCreationInputTokens: number
-    cacheReadInputTokens: number
-  }
+  totalTokenUsage: { inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number }
   modelUsage: { model: string; messageCount: number; inputTokens: number; outputTokens: number }[]
   totalDurationMs: number
 }
 
+// ─── 앱 초기화 ─────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow()
   app.on('activate', () => {

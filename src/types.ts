@@ -75,6 +75,8 @@ declare global {
       resetPanes: () => Promise<{ success: boolean }>
       saveMetadata: (data: Record<string, unknown>) => Promise<{ success: boolean }>
       loadMetadata: () => Promise<Record<string, unknown>>
+      saveSettings: (data: Record<string, unknown>) => Promise<{ success: boolean }>
+      loadSettings: () => Promise<AppSettings | null>
     }
   }
 }

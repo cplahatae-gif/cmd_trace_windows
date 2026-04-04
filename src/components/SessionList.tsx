@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Search, RefreshCw, Loader2 } from 'lucide-react'
 import type { Session } from '../types'
 
@@ -22,8 +23,8 @@ export default function SessionList({
   onRefresh,
   formatRelativeTime,
 }: Props) {
-  // 날짜 그룹별 묶기
-  const grouped = groupByDate(sessions)
+  // M-2: useMemo로 렌더링마다 재계산 방지
+  const grouped = useMemo(() => groupByDate(sessions), [sessions])
 
   return (
     <div className="w-72 flex flex-col border-r border-slate-800 bg-slate-900 shrink-0">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import type { Session, AgentType, AppSettings } from './types'
 import Sidebar from './components/Sidebar'
 import SessionList from './components/SessionList'
@@ -20,19 +20,27 @@ export default function App() {
   const [selectedSession, setSelectedSession] = useState<Session | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [activeView, setActiveView] = useState<'sessions' | 'dashboard' | 'settings'>('sessions')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [metadata, setMetadata] = useState<Record<string, { customName?: string; tags?: string[] }>>({})
 
-  // 세션 로드
+  // H-1: 앱 시작 시 설정 불러오기
+  useEffect(() => {
+    if (!window.electronAPI) return
+    window.electronAPI.loadSettings().then(saved => {
+      if (saved) setSettings(saved)
+    }).catch(() => { /* 설정 파일 없으면 기본값 사용 */ })
+  }, [])
+
+  // 세션 로드 (I-1: catch 블록 추가)
   const loadSessions = useCallback(async () => {
     if (!window.electronAPI) return
     setIsLoading(true)
+    setError(null)
     try {
-      const raw = await window.electronAPI.loadSessions(settings.agentType)
-
-      // 메타데이터 병합 (커스텀 이름, 태그)
+      const raw  = await window.electronAPI.loadSessions(settings.agentType)
       const meta = await window.electronAPI.loadMetadata() as Record<string, { customName?: string; tags?: string[] }>
       setMetadata(meta)
 
@@ -41,26 +49,22 @@ export default function App() {
         customName: meta[s.id]?.customName ?? s.customName,
         tags: meta[s.id]?.tags ?? s.tags,
       }))
-
       setSessions(merged)
       setFilteredSessions(merged)
+    } catch (err) {
+      console.error('세션 로드 실패:', err)
+      setError('세션을 불러오는 데 실패했습니다. 새로고침을 시도해보세요.')
     } finally {
       setIsLoading(false)
     }
   }, [settings.agentType])
 
-  useEffect(() => {
-    loadSessions()
-  }, [loadSessions])
+  useEffect(() => { loadSessions() }, [loadSessions])
 
   // 검색 + 태그 필터
   useEffect(() => {
     let result = sessions
-
-    if (selectedTag) {
-      result = result.filter(s => s.tags.includes(selectedTag))
-    }
-
+    if (selectedTag) result = result.filter(s => s.tags.includes(selectedTag))
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       result = result.filter(s =>
@@ -70,7 +74,6 @@ export default function App() {
         s.tags.some(t => t.toLowerCase().includes(q))
       )
     }
-
     setFilteredSessions(result)
   }, [searchQuery, sessions, selectedTag])
 
@@ -78,29 +81,42 @@ export default function App() {
   const updateSessionMeta = async (sessionId: string, updates: { customName?: string; tags?: string[] }) => {
     const newMeta = { ...metadata, [sessionId]: { ...metadata[sessionId], ...updates } }
     setMetadata(newMeta)
-
-    const updated = sessions.map(s =>
-      s.id === sessionId ? { ...s, ...updates } : s
-    )
+    const updated = sessions.map(s => s.id === sessionId ? { ...s, ...updates } : s)
     setSessions(updated)
     if (selectedSession?.id === sessionId) {
       setSelectedSession(prev => prev ? { ...prev, ...updates } : prev)
     }
-
-    if (window.electronAPI) {
-      await window.electronAPI.saveMetadata(newMeta)
-    }
+    if (window.electronAPI) await window.electronAPI.saveMetadata(newMeta)
   }
 
-  // 모든 태그 수집
-  const allTags = Array.from(new Set(sessions.flatMap(s => s.tags))).sort()
+  // H-1: 설정 변경 시 저장
+  const handleSettingsChange = useCallback((newSettings: AppSettings) => {
+    setSettings(newSettings)
+    if (window.electronAPI) {
+      window.electronAPI.saveSettings(newSettings as unknown as Record<string, unknown>)
+        .catch(err => console.error('설정 저장 실패:', err))
+    }
+  }, [])
+
+  // M-3: useMemo로 allTags 최적화
+  const allTags = useMemo(
+    () => Array.from(new Set(sessions.flatMap(s => s.tags))).sort(),
+    [sessions]
+  )
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-200">
       <TitleBar />
 
+      {/* I-1: 에러 배너 */}
+      {error && (
+        <div className="flex items-center justify-between px-4 py-2 bg-red-900/60 border-b border-red-700 text-red-200 text-sm">
+          <span>⚠️ {error}</span>
+          <button onClick={() => setError(null)} className="ml-4 text-red-300 hover:text-white">✕</button>
+        </div>
+      )}
+
       <div className="flex flex-1 overflow-hidden">
-        {/* 사이드바 */}
         <Sidebar
           activeView={activeView}
           onViewChange={setActiveView}
@@ -109,10 +125,9 @@ export default function App() {
           onTagSelect={setSelectedTag}
           sessionCount={sessions.length}
           settings={settings}
-          onSettingsChange={setSettings}
+          onSettingsChange={handleSettingsChange}
         />
 
-        {/* 세션 목록 */}
         {activeView === 'sessions' && (
           <SessionList
             sessions={filteredSessions}
@@ -128,7 +143,6 @@ export default function App() {
           />
         )}
 
-        {/* 세션 상세 / 대시보드 */}
         <div className="flex-1 overflow-hidden">
           {activeView === 'sessions' && selectedSession ? (
             <SessionDetail
@@ -141,7 +155,7 @@ export default function App() {
           ) : activeView === 'dashboard' ? (
             <Dashboard sessions={sessions} />
           ) : (
-            <SettingsPanel settings={settings} onSettingsChange={setSettings} />
+            <SettingsPanel settings={settings} onSettingsChange={handleSettingsChange} />
           )}
         </div>
       </div>
@@ -166,15 +180,11 @@ function EmptyState({ onRefresh }: { onRefresh: () => void }) {
   )
 }
 
-// ─── 대시보드 (간단 통계) ──────────────────────────────────
+// ─── 대시보드 ──────────────────────────────────────────────
 function Dashboard({ sessions }: { sessions: Session[] }) {
   const totalMessages = sessions.reduce((sum, s) => sum + s.messageCount, 0)
   const projects = Array.from(new Set(sessions.map(s => s.project))).length
-  const today = sessions.filter(s => {
-    const d = new Date(s.lastActivity)
-    const now = new Date()
-    return d.toDateString() === now.toDateString()
-  }).length
+  const today = sessions.filter(s => new Date(s.lastActivity).toDateString() === new Date().toDateString()).length
 
   return (
     <div className="p-6 h-full overflow-y-auto scrollbar-thin">
@@ -258,7 +268,7 @@ function SettingsPanel({ settings, onSettingsChange }: {
                   name="agentType"
                   value={opt.value}
                   checked={settings.agentType === opt.value}
-                  onChange={() => onSettingsChange({ ...settings, agentType: opt.value })}
+                  onChange={() => onSettingsChange({ ...settings, agentType: opt.value as AgentType })}
                   className="accent-brand-500"
                 />
                 <span className="text-sm text-slate-300 group-hover:text-white transition-colors">{opt.label}</span>

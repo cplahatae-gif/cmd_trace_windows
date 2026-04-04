@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X } from 'lucide-react'
 import type { Session, Message, SessionInsights, AppSettings } from '../types'
 import MessageView from './MessageView'
@@ -22,31 +22,44 @@ export default function SessionDetail({ session, settings, onUpdateMeta }: Props
   const [editName, setEditName] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [isResuming, setIsResuming] = useState(false)
+  const [messageError, setMessageError] = useState<string | null>(null)
+  const [insightError, setInsightError] = useState<string | null>(null)
 
+  const loadMessages = useCallback(async () => {
+    if (!window.electronAPI) return
+    setIsLoadingMessages(true)
+    setMessageError(null)
+    try {
+      const msgs = await window.electronAPI.loadMessages(session.projectFolder, session.fileName)
+      setMessages(msgs)
+    } catch (err) {
+      console.error('메시지 로드 실패:', err)
+      setMessageError('메시지를 불러오는 데 실패했습니다.')
+    } finally {
+      setIsLoadingMessages(false)
+    }
+  }, [session.projectFolder, session.fileName])
+
+  // I-6: loadMessages를 의존성에 포함
   useEffect(() => {
     setMessages([])
     setInsights(null)
     setActiveTab('messages')
+    setMessageError(null)
+    setInsightError(null)
     loadMessages()
-  }, [session.id])
-
-  const loadMessages = async () => {
-    if (!window.electronAPI) return
-    setIsLoadingMessages(true)
-    try {
-      const msgs = await window.electronAPI.loadMessages(session.projectFolder, session.fileName)
-      setMessages(msgs)
-    } finally {
-      setIsLoadingMessages(false)
-    }
-  }
+  }, [session.id, loadMessages])
 
   const loadInsights = async () => {
     if (!window.electronAPI || insights) return
     setIsLoadingInsights(true)
+    setInsightError(null)
     try {
       const data = await window.electronAPI.loadInsights(session.projectFolder, session.fileName)
       setInsights(data)
+    } catch (err) {
+      console.error('인사이트 로드 실패:', err)
+      setInsightError('인사이트를 불러오는 데 실패했습니다.')
     } finally {
       setIsLoadingInsights(false)
     }
@@ -226,6 +239,13 @@ export default function SessionDetail({ session, settings, onUpdateMeta }: Props
               <Loader2 size={20} className="animate-spin mr-2" />
               <span className="text-sm">메시지 로딩 중...</span>
             </div>
+          ) : messageError ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3">
+              <span className="text-red-400 text-sm">⚠️ {messageError}</span>
+              <button onClick={loadMessages} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded-lg">
+                다시 시도
+              </button>
+            </div>
           ) : (
             <MessageView messages={messages} />
           )
@@ -234,6 +254,10 @@ export default function SessionDetail({ session, settings, onUpdateMeta }: Props
             <div className="flex items-center justify-center h-full text-slate-500">
               <Loader2 size={20} className="animate-spin mr-2" />
               <span className="text-sm">인사이트 로딩 중...</span>
+            </div>
+          ) : insightError ? (
+            <div className="flex items-center justify-center h-full">
+              <span className="text-red-400 text-sm">⚠️ {insightError}</span>
             </div>
           ) : insights ? (
             <InsightsView insights={insights} />
