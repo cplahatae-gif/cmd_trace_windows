@@ -131,14 +131,14 @@ export default function App() {
   )
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-200">
+    <div className="flex flex-col h-screen bg-white text-ink-primary">
       <TitleBar />
 
-      {/* I-1: 에러 배너 */}
+      {/* 에러 배너 */}
       {error && (
-        <div className="flex items-center justify-between px-4 py-2 bg-red-900/60 border-b border-red-700 text-red-200 text-sm">
+        <div className="flex items-center justify-between px-4 py-2 bg-red-50 border-b border-red-100 text-red-600 text-xs">
           <span>⚠️ {error}</span>
-          <button onClick={() => setError(null)} className="ml-4 text-red-300 hover:text-white">✕</button>
+          <button onClick={() => setError(null)} className="ml-4 text-red-400 hover:text-red-600 p-0.5">✕</button>
         </div>
       )}
 
@@ -198,13 +198,15 @@ export default function App() {
 // ─── 빈 상태 ──────────────────────────────────────────────
 function EmptyState({ onRefresh }: { onRefresh: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4">
-      <div className="text-6xl">🖥️</div>
-      <p className="text-lg font-medium text-slate-400">세션을 선택하세요</p>
-      <p className="text-sm">왼쪽 목록에서 세션을 클릭하면 대화 내용을 볼 수 있습니다</p>
+    <div className="flex flex-col items-center justify-center h-full text-ink-muted gap-3 bg-surface-soft">
+      <div className="w-14 h-14 rounded-2xl bg-white border border-[rgba(0,0,0,0.08)] shadow-card flex items-center justify-center text-2xl">
+        💬
+      </div>
+      <p className="text-sm font-medium text-ink-secondary">세션을 선택하세요</p>
+      <p className="text-xs text-ink-muted">왼쪽 목록에서 세션을 클릭하면 대화 내용을 볼 수 있습니다</p>
       <button
         onClick={onRefresh}
-        className="mt-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm transition-colors"
+        className="mt-1 btn-primary"
       >
         새로고침
       </button>

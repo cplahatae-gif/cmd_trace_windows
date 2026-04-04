@@ -5,31 +5,31 @@ interface Props {
   insights: SessionInsights
 }
 
-const COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe']
+const COLORS = ['#635bff', '#8b7ef8', '#a99ef5', '#c4beff', '#d8d4ff']
 
 export default function InsightsView({ insights }: Props) {
   const { totalTokenUsage, toolStatistics, modelUsage, totalDurationMs } = insights
   const totalTokens = totalTokenUsage.inputTokens + totalTokenUsage.outputTokens
 
   return (
-    <div className="h-full overflow-y-auto scrollbar-thin px-4 py-4 space-y-4">
+    <div className="h-full overflow-y-auto scrollbar-thin px-5 py-5 space-y-5">
       {/* 토큰 사용량 */}
       <Section title="토큰 사용량">
         <div className="grid grid-cols-4 gap-3">
           {[
-            { label: '총 토큰', value: totalTokens.toLocaleString(), color: 'text-brand-300' },
-            { label: '입력', value: totalTokenUsage.inputTokens.toLocaleString(), color: 'text-blue-300' },
-            { label: '출력', value: totalTokenUsage.outputTokens.toLocaleString(), color: 'text-green-300' },
-            { label: '캐시', value: totalTokenUsage.cacheReadInputTokens.toLocaleString(), color: 'text-amber-300' },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="bg-slate-800 rounded-lg p-3 border border-slate-700">
-              <div className={`text-lg font-bold ${color}`}>{value}</div>
-              <div className="text-xs text-slate-500">{label}</div>
+            { label: '총 토큰', value: totalTokens.toLocaleString(), accent: 'text-brand-600', bg: 'bg-brand-50' },
+            { label: '입력', value: totalTokenUsage.inputTokens.toLocaleString(), accent: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: '출력', value: totalTokenUsage.outputTokens.toLocaleString(), accent: 'text-green-600', bg: 'bg-green-50' },
+            { label: '캐시', value: totalTokenUsage.cacheReadInputTokens.toLocaleString(), accent: 'text-amber-600', bg: 'bg-amber-50' },
+          ].map(({ label, value, accent, bg }) => (
+            <div key={label} className={`${bg} rounded-xl p-3 border border-[rgba(0,0,0,0.06)]`}>
+              <div className={`text-lg font-bold ${accent} leading-tight`}>{value}</div>
+              <div className="text-[11px] text-ink-muted mt-0.5">{label}</div>
             </div>
           ))}
         </div>
         {totalDurationMs > 0 && (
-          <div className="mt-2 text-xs text-slate-500">
+          <div className="mt-2 text-[11px] text-ink-muted">
             총 실행 시간: {Math.round(totalDurationMs / 1000)}초
           </div>
         )}
@@ -38,14 +38,20 @@ export default function InsightsView({ insights }: Props) {
       {/* 툴 사용 통계 */}
       {toolStatistics.length > 0 && (
         <Section title="툴 사용 빈도">
-          <div className="h-48">
+          <div className="bg-white rounded-xl border border-[rgba(0,0,0,0.08)] p-3" style={{ height: 200 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={toolStatistics.slice(0, 8)} layout="vertical" margin={{ left: 10, right: 20 }}>
-                <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} width={90} axisLine={false} tickLine={false} />
+              <BarChart data={toolStatistics.slice(0, 8)} layout="vertical" margin={{ left: 4, right: 20, top: 4, bottom: 4 }}>
+                <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: '#6b7280', fontSize: 10 }} width={90} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
-                  cursor={{ fill: 'rgba(99,102,241,0.1)' }}
+                  contentStyle={{
+                    backgroundColor: '#ffffff',
+                    border: '1px solid rgba(0,0,0,0.1)',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                  }}
+                  cursor={{ fill: 'rgba(99,91,255,0.05)' }}
                 />
                 <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                   {toolStatistics.slice(0, 8).map((_, i) => (
@@ -63,9 +69,9 @@ export default function InsightsView({ insights }: Props) {
         <Section title="모델별 사용">
           <div className="space-y-2">
             {modelUsage.map(m => (
-              <div key={m.model} className="flex items-center justify-between bg-slate-800 rounded-lg px-3 py-2 border border-slate-700">
-                <span className="text-sm text-slate-300 font-mono">{m.model}</span>
-                <div className="flex gap-4 text-xs text-slate-500">
+              <div key={m.model} className="flex items-center justify-between bg-white rounded-xl px-4 py-3 border border-[rgba(0,0,0,0.08)]">
+                <span className="text-xs font-mono text-ink-primary">{m.model}</span>
+                <div className="flex gap-4 text-[11px] text-ink-muted">
                   <span>{m.messageCount}회</span>
                   <span>{(m.inputTokens + m.outputTokens).toLocaleString()} 토큰</span>
                 </div>
@@ -81,7 +87,7 @@ export default function InsightsView({ insights }: Props) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{title}</h3>
+      <h3 className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-2.5">{title}</h3>
       {children}
     </div>
   )
