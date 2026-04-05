@@ -15,14 +15,14 @@ export default function MessageView({ messages }: Props) {
 
   if (messages.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-500">
+      <div className="flex items-center justify-center h-full text-ink-muted">
         <span className="text-sm">메시지가 없습니다</span>
       </div>
     )
   }
 
   return (
-    <div className="h-full overflow-y-auto scrollbar-thin px-4 py-4 space-y-3 selectable">
+    <div className="h-full overflow-y-auto scrollbar-thin px-5 py-5 space-y-4 selectable">
       {messages.map((msg, idx) => (
         <MessageBubble key={idx} message={msg} />
       ))}
@@ -35,28 +35,46 @@ function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user'
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[85%] rounded-xl px-4 py-3 text-sm ${
+    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      {/* 아바타 */}
+      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 mt-0.5 ${
         isUser
-          ? 'bg-brand-700/50 border border-brand-600/30 text-slate-100'
+          ? 'bg-brand-500 text-white'
           : message.isToolUse
-            ? 'bg-amber-950/30 border border-amber-800/30 text-amber-200'
-            : 'bg-slate-800 border border-slate-700 text-slate-200'
+            ? 'bg-amber-100 text-amber-700'
+            : 'bg-surface-subtle text-ink-secondary border border-[rgba(0,0,0,0.08)]'
       }`}>
+        {isUser ? 'U' : message.isToolUse ? '⚙' : 'AI'}
+      </div>
+
+      {/* 버블 */}
+      <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm ${
+        isUser
+          ? 'bg-brand-500 text-white rounded-tr-sm'
+          : message.isToolUse
+            ? 'bg-amber-50 border border-amber-100 text-ink-primary rounded-tl-sm'
+            : 'bg-white border border-[rgba(0,0,0,0.08)] text-ink-primary rounded-tl-sm shadow-card'
+      }`}>
+        {/* 라벨 + 시간 */}
         <div className="flex items-center gap-2 mb-1.5">
-          <span className={`text-[10px] font-semibold uppercase tracking-wider ${
-            isUser ? 'text-brand-300' : message.isToolUse ? 'text-amber-400' : 'text-slate-400'
+          <span className={`text-[10px] font-semibold uppercase tracking-wide ${
+            isUser ? 'text-brand-100' : message.isToolUse ? 'text-amber-600' : 'text-ink-muted'
           }`}>
-            {isUser ? 'You' : message.isToolUse ? '⚙ Tool' : `AI${message.modelId ? ` · ${message.modelId.split('-').slice(-1)[0]}` : ''}`}
+            {isUser ? 'You' : message.isToolUse ? 'Tool' : `Claude${message.modelId ? ` · ${message.modelId.split('-').slice(-1)[0]}` : ''}`}
           </span>
           {message.timestamp && (
-            <span className="text-[10px] text-slate-600 ml-auto">
+            <span className={`text-[10px] ml-auto ${isUser ? 'text-brand-200' : 'text-ink-faint'}`}>
               {new Date(message.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
         </div>
 
-        <div className="prose prose-invert prose-sm max-w-none prose-pre:bg-slate-900 prose-pre:border prose-pre:border-slate-700 prose-code:text-brand-300 prose-code:bg-slate-900/50 prose-code:px-1 prose-code:rounded">
+        {/* 내용 */}
+        <div className={`prose prose-sm max-w-none ${
+          isUser
+            ? 'prose-invert'
+            : 'prose-neutral prose-pre:bg-surface-soft prose-pre:border prose-pre:border-[rgba(0,0,0,0.08)] prose-code:text-brand-600 prose-code:bg-brand-50 prose-code:px-1 prose-code:rounded prose-code:text-xs'
+        }`}>
           <ReactMarkdown>{message.content}</ReactMarkdown>
         </div>
       </div>

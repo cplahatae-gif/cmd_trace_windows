@@ -1,3 +1,5 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -16,31 +18,33 @@
   }
 
   body {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    background-color: #0f172a;
-    color: #e2e8f0;
+    font-family: 'Pretendard', 'Inter', 'Segoe UI', system-ui, sans-serif;
+    background-color: #ffffff;
+    color: #1a1d23;
     user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
 @layer utilities {
-  /* 스크롤바 스타일 */
+  /* 스크롤바 스타일 — Flex-like 얇고 섬세한 */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: #334155 transparent;
+    scrollbar-color: rgba(0,0,0,0.12) transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
+    width: 5px;
   }
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #334155;
-    border-radius: 3px;
+    background: rgba(0,0,0,0.12);
+    border-radius: 99px;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: #475569;
+    background: rgba(0,0,0,0.2);
   }
 
   /* 드래그 가능한 타이틀바 영역 */
@@ -55,5 +59,21 @@
   .selectable {
     user-select: text;
     -webkit-user-select: text;
+  }
+
+  /* 유리 카드 효과 (Flex 스타일) */
+  .card {
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  /* Flex 버튼 base 스타일 */
+  .btn-primary {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-surface-soft hover:bg-surface-subtle text-ink-primary text-xs font-medium rounded-lg border border-[rgba(0,0,0,0.08)] transition-colors;
   }
 }
