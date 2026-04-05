@@ -9,6 +9,7 @@ import SettingsPanel from './components/SettingsPanel'
 import TrashView from './components/TrashView'
 import ProjectsView from './components/ProjectsView'
 import ProjectDetailView from './components/ProjectDetailView'
+import type { ProjectFormData } from './components/ProjectModal'
 import { formatDistanceToNow } from 'date-fns'
 import { ko } from 'date-fns/locale'
 
@@ -246,6 +247,19 @@ export default function App() {
     await applyMetaUpdate(sessionId, { projectId: projectId === null ? undefined : projectId })
   }
 
+  const createProjectFromSession = async (sessionId: string, data: ProjectFormData) => {
+    const now = new Date().toISOString()
+    const newProject: Project = {
+      id: `proj_${Date.now()}`,
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+      sessionIds: [],
+    }
+    await saveProjects([...projects, newProject])
+    await applyMetaUpdate(sessionId, { projectId: newProject.id })
+  }
+
   // H-1: 설정 변경 시 저장
   const handleSettingsChange = useCallback((newSettings: AppSettings) => {
     setSettings(newSettings)
@@ -307,6 +321,9 @@ export default function App() {
               settings={settings}
               onUpdateMeta={updateSessionMeta}
               onDelete={deleteSession}
+              projects={projects}
+              onAssignSession={assignSessionToProject}
+              onCreateProjectFromSession={createProjectFromSession}
             />
           ) : activeView === 'sessions' ? (
             <EmptyState onRefresh={loadSessions} />
