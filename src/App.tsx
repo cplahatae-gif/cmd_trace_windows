@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import type { Session, AppSettings, Project } from './types'
+import type { Session, AppSettings, Project, ProjectStatus } from './types'
 import Sidebar from './components/Sidebar'
 import SessionList from './components/SessionList'
 import SessionDetail from './components/SessionDetail'
@@ -8,6 +8,7 @@ import Dashboard from './components/Dashboard'
 import SettingsPanel from './components/SettingsPanel'
 import TrashView from './components/TrashView'
 import ProjectsView from './components/ProjectsView'
+import ProjectDetailView from './components/ProjectDetailView'
 import { formatDistanceToNow } from 'date-fns'
 import { ko } from 'date-fns/locale'
 
@@ -32,6 +33,7 @@ export default function App() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [metadata, setMetadata] = useState<Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string }>>({})
   const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
 
   // H-1: 앱 시작 시 설정 + 프로젝트 불러오기
   useEffect(() => {
@@ -40,7 +42,14 @@ export default function App() {
       if (saved) setSettings(saved)
     }).catch(() => { /* 설정 파일 없으면 기본값 사용 */ })
     window.electronAPI.loadProjects().then(saved => {
-      if (Array.isArray(saved)) setProjects(saved as Project[])
+      if (Array.isArray(saved)) {
+        const normalized = (saved as Project[]).map(p => ({
+          ...p,
+          status: (p.status as ProjectStatus) || 'active',
+          updatedAt: p.updatedAt || p.createdAt,
+        }))
+        setProjects(normalized)
+      }
     }).catch(() => {})
   }, [])
 
@@ -137,6 +146,11 @@ export default function App() {
     setFilteredSessions(result)
   }, [searchQuery, activeSessions, selectedTag])
 
+  // 뷰 전환 시 프로젝트 상세 초기화
+  useEffect(() => {
+    if (activeView !== 'projects') setSelectedProjectId(null)
+  }, [activeView])
+
   // 키보드 단축키
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -194,23 +208,26 @@ export default function App() {
     }
   }, [])
 
-  const createProject = async (data: { name: string; description: string; color: string }) => {
+  const createProject = async (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'sessionIds'>) => {
+    const now = new Date().toISOString()
     const newProject: Project = {
       id: `proj_${Date.now()}`,
-      name: data.name,
-      description: data.description,
-      color: data.color,
-      createdAt: new Date().toISOString(),
+      ...data,
+      createdAt: now,
+      updatedAt: now,
       sessionIds: [],
     }
     await saveProjects([...projects, newProject])
   }
 
-  const updateProject = async (id: string, data: { name: string; description: string; color: string }) => {
-    await saveProjects(projects.map(p => p.id === id ? { ...p, ...data } : p))
+  const updateProject = async (id: string, data: Partial<Project>) => {
+    await saveProjects(projects.map(p =>
+      p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p
+    ))
   }
 
   const deleteProject = async (id: string) => {
+    if (selectedProjectId === id) setSelectedProjectId(null)
     // 프로젝트 삭제 시 소속 세션의 projectId 제거
     const updated = sessions.map(s => s.projectId === id ? { ...s, projectId: undefined } : s)
     const newMeta = { ...metadata }
@@ -296,6 +313,16 @@ export default function App() {
           ) : activeView === 'dashboard' ? (
             <Dashboard sessions={activeSessions} />
           ) : activeView === 'projects' ? (
+            selectedProjectId && projects.find(p => p.id === selectedProjectId) ? (
+              <ProjectDetailView
+                project={projects.find(p => p.id === selectedProjectId)!}
+                sessions={activeSessions}
+                onBack={() => setSelectedProjectId(null)}
+                onUpdateProject={updateProject}
+                onSelectSession={s => { setSelectedSession(s); setActiveView('sessions') }}
+                onAssignSession={assignSessionToProject}
+              />
+            ) : (
             <ProjectsView
               projects={projects}
               sessions={activeSessions}
@@ -304,7 +331,9 @@ export default function App() {
               onDeleteProject={deleteProject}
               onAssignSession={assignSessionToProject}
               onSelectSession={s => { setSelectedSession(s); setActiveView('sessions') }}
+              onSelectProject={setSelectedProjectId}
             />
+            )
           ) : activeView === 'trash' ? (
             <TrashView
               sessions={deletedSessions}

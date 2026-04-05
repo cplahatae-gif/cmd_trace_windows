@@ -19,12 +19,18 @@ export interface Session {
 }
 
 // ─── 프로젝트 ─────────────────────────────────────────────
+export type ProjectStatus = 'active' | 'pending' | 'archived'
+
 export interface Project {
   id: string
   name: string
   description?: string
   color: string
+  status: ProjectStatus
   createdAt: string
+  updatedAt: string
+  goal?: string
+  notes?: string
   sessionIds: string[]
 }
 

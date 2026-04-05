@@ -1,31 +1,59 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
-import type { Project } from '../types'
+import type { Project, ProjectStatus } from '../types'
 import { PROJECT_COLORS } from '../types'
+
+export interface ProjectFormData {
+  name: string
+  description: string
+  color: string
+  status: ProjectStatus
+  goal: string
+  notes: string
+}
 
 interface Props {
   project?: Project | null
-  onSave: (data: { name: string; description: string; color: string }) => void
+  onSave: (data: ProjectFormData) => void
   onClose: () => void
 }
 
+const STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = [
+  { value: 'active',   label: '진행 중' },
+  { value: 'pending',  label: '대기 중' },
+  { value: 'archived', label: '아카이브' },
+]
+
 export default function ProjectModal({ project, onSave, onClose }: Props) {
-  const [name, setName] = useState('')
+  const [name, setName]           = useState('')
   const [description, setDescription] = useState('')
-  const [color, setColor] = useState<string>(PROJECT_COLORS[0])
+  const [color, setColor]         = useState<string>(PROJECT_COLORS[0])
+  const [status, setStatus]       = useState<ProjectStatus>('active')
+  const [goal, setGoal]           = useState('')
+  const [notes, setNotes]         = useState('')
 
   useEffect(() => {
     if (project) {
       setName(project.name)
       setDescription(project.description || '')
       setColor(project.color as string)
+      setStatus(project.status || 'active')
+      setGoal(project.goal || '')
+      setNotes(project.notes || '')
     }
   }, [project])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
-    onSave({ name: name.trim(), description: description.trim(), color })
+    onSave({
+      name: name.trim(),
+      description: description.trim(),
+      color,
+      status,
+      goal: goal.trim(),
+      notes: notes.trim(),
+    })
   }
 
   return (
@@ -34,7 +62,7 @@ export default function ProjectModal({ project, onSave, onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-modal w-[420px] p-6"
+        className="bg-white rounded-2xl shadow-modal w-[460px] p-6 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-5">
@@ -47,6 +75,7 @@ export default function ProjectModal({ project, onSave, onClose }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 이름 */}
           <div>
             <label className="block text-xs font-medium text-ink-secondary mb-1.5">프로젝트 이름</label>
             <input
@@ -58,6 +87,7 @@ export default function ProjectModal({ project, onSave, onClose }: Props) {
             />
           </div>
 
+          {/* 설명 */}
           <div>
             <label className="block text-xs font-medium text-ink-secondary mb-1.5">설명 (선택)</label>
             <textarea
@@ -69,6 +99,32 @@ export default function ProjectModal({ project, onSave, onClose }: Props) {
             />
           </div>
 
+          {/* 상태 */}
+          <div>
+            <label className="block text-xs font-medium text-ink-secondary mb-2">상태</label>
+            <div className="flex gap-1.5">
+              {STATUS_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setStatus(opt.value)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                    status === opt.value
+                      ? opt.value === 'active'
+                        ? 'bg-green-50 text-green-600 border-green-200'
+                        : opt.value === 'pending'
+                        ? 'bg-amber-50 text-amber-600 border-amber-200'
+                        : 'bg-surface-subtle text-ink-secondary border-[rgba(0,0,0,0.12)]'
+                      : 'bg-white text-ink-muted border-[rgba(0,0,0,0.08)] hover:bg-surface-soft'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 색상 */}
           <div>
             <label className="block text-xs font-medium text-ink-secondary mb-2">색상</label>
             <div className="flex gap-2 flex-wrap">
@@ -82,6 +138,29 @@ export default function ProjectModal({ project, onSave, onClose }: Props) {
                 />
               ))}
             </div>
+          </div>
+
+          {/* 목표 */}
+          <div>
+            <label className="block text-xs font-medium text-ink-secondary mb-1.5">목표 (선택)</label>
+            <input
+              value={goal}
+              onChange={e => setGoal(e.target.value)}
+              className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              placeholder="예: 4월까지 결제 모듈 완성"
+            />
+          </div>
+
+          {/* 메모 */}
+          <div>
+            <label className="block text-xs font-medium text-ink-secondary mb-1.5">메모 (선택)</label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={4}
+              className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 resize-none"
+              placeholder="작업 내용, 참고사항, 진행 현황..."
+            />
           </div>
 
           <div className="flex gap-2 pt-2">
