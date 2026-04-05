@@ -13,5 +13,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      // Windows에서 Rollup 워커 스레드 행업 방지
+      maxParallelFileOps: 1,
+    },
   },
 })
