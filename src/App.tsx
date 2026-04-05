@@ -88,6 +88,25 @@ export default function App() {
   const activeSessions = useMemo(() => sessions.filter(s => !s.isDeleted), [sessions])
   const deletedSessions = useMemo(() => sessions.filter(s => s.isDeleted), [sessions])
 
+  // folderPath 기반 자동 프로젝트 매칭 (런타임만, 메타 저장 안 함)
+  const sessionsWithAutoProject = useMemo(() => {
+    const folderToProject = new Map<string, string>()
+    for (const p of projects) {
+      if (p.folderPath) folderToProject.set(p.folderPath, p.id)
+    }
+    return activeSessions.map(s => {
+      if (s.projectId) return s  // 수동 배정 우선
+      const autoId = folderToProject.get(s.project)
+      return autoId ? { ...s, projectId: autoId } : s
+    })
+  }, [activeSessions, projects])
+
+  // 감지된 고유 폴더 목록 (ProjectModal 드롭다운용)
+  const uniqueFolders = useMemo(
+    () => Array.from(new Set(activeSessions.map(s => s.project))).sort(),
+    [activeSessions]
+  )
+
   // 검색 연산자 파서
   const parseSearchQuery = (query: string) => {
     const operators: Record<string, string> = {}
@@ -317,11 +336,12 @@ export default function App() {
         <div className="flex-1 overflow-hidden">
           {activeView === 'sessions' && selectedSession ? (
             <SessionDetail
-              session={selectedSession}
+              session={sessionsWithAutoProject.find(s => s.id === selectedSession.id) ?? selectedSession}
               settings={settings}
               onUpdateMeta={updateSessionMeta}
               onDelete={deleteSession}
               projects={projects}
+              folders={uniqueFolders}
               onAssignSession={assignSessionToProject}
               onCreateProjectFromSession={createProjectFromSession}
             />
@@ -333,7 +353,7 @@ export default function App() {
             selectedProjectId && projects.find(p => p.id === selectedProjectId) ? (
               <ProjectDetailView
                 project={projects.find(p => p.id === selectedProjectId)!}
-                sessions={activeSessions}
+                sessions={sessionsWithAutoProject}
                 onBack={() => setSelectedProjectId(null)}
                 onUpdateProject={updateProject}
                 onSelectSession={s => { setSelectedSession(s); setActiveView('sessions') }}
@@ -342,7 +362,8 @@ export default function App() {
             ) : (
             <ProjectsView
               projects={projects}
-              sessions={activeSessions}
+              sessions={sessionsWithAutoProject}
+              folders={uniqueFolders}
               onCreateProject={createProject}
               onUpdateProject={updateProject}
               onDeleteProject={deleteProject}

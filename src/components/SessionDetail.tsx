@@ -13,13 +13,14 @@ interface Props {
   onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean }) => Promise<void>
   onDelete: (id: string) => void
   projects?: Project[]
+  folders?: string[]
   onAssignSession?: (sessionId: string, projectId: string | null) => void
   onCreateProjectFromSession?: (sessionId: string, data: ProjectFormData) => void
 }
 
 type Tab = 'messages' | 'insights'
 
-export default function SessionDetail({ session, settings, onUpdateMeta, onDelete, projects, onAssignSession, onCreateProjectFromSession }: Props) {
+export default function SessionDetail({ session, settings, onUpdateMeta, onDelete, projects, folders, onAssignSession, onCreateProjectFromSession }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [insights, setInsights] = useState<SessionInsights | null>(null)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
@@ -155,6 +156,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
     description: session.preview.slice(0, 120).trim(),
     color: PROJECT_COLORS[0],
     status: 'active',
+    folderPath: session.project,
     createdAt: '',
     updatedAt: '',
     sessionIds: [],
@@ -457,6 +459,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
       {showNewProjectModal && (
         <ProjectModal
           project={prefillProject}
+          folders={folders}
           onSave={handleCreateProject}
           onClose={() => setShowNewProjectModal(false)}
         />

@@ -10,10 +10,12 @@ export interface ProjectFormData {
   status: ProjectStatus
   goal: string
   notes: string
+  folderPath: string
 }
 
 interface Props {
   project?: Project | null
+  folders?: string[]
   onSave: (data: ProjectFormData) => void
   onClose: () => void
 }
@@ -24,13 +26,14 @@ const STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = [
   { value: 'archived', label: '아카이브' },
 ]
 
-export default function ProjectModal({ project, onSave, onClose }: Props) {
+export default function ProjectModal({ project, folders, onSave, onClose }: Props) {
   const [name, setName]           = useState('')
   const [description, setDescription] = useState('')
   const [color, setColor]         = useState<string>(PROJECT_COLORS[0])
   const [status, setStatus]       = useState<ProjectStatus>('active')
   const [goal, setGoal]           = useState('')
   const [notes, setNotes]         = useState('')
+  const [folderPath, setFolderPath] = useState('')
 
   useEffect(() => {
     if (project) {
@@ -40,6 +43,7 @@ export default function ProjectModal({ project, onSave, onClose }: Props) {
       setStatus(project.status || 'active')
       setGoal(project.goal || '')
       setNotes(project.notes || '')
+      setFolderPath(project.folderPath || '')
     }
   }, [project])
 
@@ -53,6 +57,7 @@ export default function ProjectModal({ project, onSave, onClose }: Props) {
       status,
       goal: goal.trim(),
       notes: notes.trim(),
+      folderPath: folderPath.trim(),
     })
   }
 
@@ -149,6 +154,33 @@ export default function ProjectModal({ project, onSave, onClose }: Props) {
               className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
               placeholder="예: 4월까지 결제 모듈 완성"
             />
+          </div>
+
+          {/* 연결 폴더 */}
+          <div>
+            <label className="block text-xs font-medium text-ink-secondary mb-1.5">연결 폴더 (선택)</label>
+            <p className="text-[11px] text-ink-faint mb-1.5">선택한 폴더의 세션이 이 프로젝트에 자동으로 포함됩니다.</p>
+            {folders && folders.length > 0 ? (
+              <select
+                value={folderPath}
+                onChange={e => setFolderPath(e.target.value)}
+                className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 bg-white"
+              >
+                <option value="">-- 폴더 선택 안 함 --</option>
+                {folders.map(f => (
+                  <option key={f} value={f}>
+                    {f.split(/[\\/]/).pop() || f}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={folderPath}
+                onChange={e => setFolderPath(e.target.value)}
+                className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                placeholder="C:/Users/...폴더 경로..."
+              />
+            )}
           </div>
 
           {/* 메모 */}

@@ -58,20 +58,39 @@ export default function ProjectDetailView({
     return new Date(Math.max(...projectSessions.map(s => new Date(s.lastActivity).getTime())))
   }, [projectSessions])
 
-  // 프로젝트 요약: 세션 preview에서 자동 추출
-  const projectSummary = useMemo(() => {
+  // 키워드 추출 (불용어 제거 + 빈도 상위 8개)
+  const keywords = useMemo(() => {
     if (projectSessions.length === 0) return []
-    // 최근 세션 순으로 preview(첫 사용자 메시지)를 수집
-    const previews = projectSessions
-      .filter(s => s.preview && s.preview.trim().length > 5)
+    const stopWords = new Set([
+      'the','a','an','is','are','was','were','and','or','but','in','on','at','to','for','of','with','by','from','this','that','it','be','as','do','did','have','has','will','can','my','your','we','our','you','i',
+      '을','를','이','가','에','에서','의','하','한','해','해줘','좀','그','저','것','수','등','및','할','된','되','인','있','없','거','내','나','뭐','이거','저거','어떻게','왜','무슨','제','어디','지금','다시','어떤',
+    ])
+    const words = new Map<string, number>()
+    for (const s of projectSessions) {
+      const text = `${s.customName || ''} ${s.preview}`
+      const tokens = text.split(/[\s,.\-:;!?()[\]{}'"\/\\`]+/)
+        .map(w => w.toLowerCase().trim())
+        .filter(w => w.length > 1 && !stopWords.has(w) && !/^\d+$/.test(w))
+      for (const t of tokens) words.set(t, (words.get(t) || 0) + 1)
+    }
+    return Array.from(words.entries())
+      .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
-      .map(s => ({
-        title: s.customName || s.preview.slice(0, 60),
-        preview: s.preview.slice(0, 120),
-        date: s.lastActivity,
-        messageCount: s.messageCount,
-      }))
-    return previews
+      .map(([word]) => word)
+  }, [projectSessions])
+
+  // 타임라인: 날짜별 세션 그룹핑
+  const timeline = useMemo(() => {
+    if (projectSessions.length === 0) return []
+    const groups = new Map<string, Session[]>()
+    for (const s of projectSessions) {
+      const dateKey = new Date(s.lastActivity).toLocaleDateString('ko-KR')
+      if (!groups.has(dateKey)) groups.set(dateKey, [])
+      groups.get(dateKey)!.push(s)
+    }
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime())
+      .slice(0, 10)
   }, [projectSessions])
 
   // 프로젝트 폴더 경로 (공통)
@@ -198,26 +217,53 @@ export default function ProjectDetailView({
           )}
         </div>
 
-        {/* 프로젝트 요약 — 세션 preview 기반 자동 생성 */}
-        {projectSummary.length > 0 && (
+        {/* 프로젝트 요약 — 키워드 + 타임라인 */}
+        {(keywords.length > 0 || timeline.length > 0) && (
           <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card p-5">
             <h3 className="text-sm font-semibold text-ink-primary mb-3">프로젝트 요약</h3>
-            <p className="text-xs text-ink-muted mb-3">최근 세션에서 어떤 작업을 했는지 자동으로 정리합니다.</p>
-            <div className="space-y-2">
-              {projectSummary.map((item, i) => (
-                <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg bg-surface-soft border border-[rgba(0,0,0,0.04)]">
-                  <span className="text-ink-faint text-[10px] font-mono shrink-0 mt-0.5">{i + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-ink-primary leading-relaxed">{item.preview}</p>
-                    <div className="flex items-center gap-2 mt-1 text-[10px] text-ink-faint">
-                      <span>{item.messageCount}개 메시지</span>
-                      <span>·</span>
-                      <span>{formatDistanceToNow(new Date(item.date), { addSuffix: true, locale: ko })}</span>
+
+            {/* 키워드 태그 */}
+            {keywords.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {keywords.map(kw => (
+                  <span key={kw} className="px-2.5 py-0.5 text-[11px] bg-brand-50 text-brand-600 border border-brand-100 rounded-full font-medium">
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* 타임라인 */}
+            {timeline.length > 0 && (
+              <div className="space-y-3">
+                {timeline.map(([dateKey, daySessions]) => (
+                  <div key={dateKey}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-[11px] font-semibold text-ink-secondary">{dateKey}</span>
+                      <span className="text-[10px] text-ink-faint">({daySessions.length}세션)</span>
+                    </div>
+                    <div className="pl-3 border-l-2 border-[rgba(0,0,0,0.06)] space-y-1">
+                      {daySessions.map((s, i) => (
+                        <div key={s.id} className="flex items-center gap-2">
+                          <span className="text-[10px] text-ink-faint shrink-0">
+                            {i === daySessions.length - 1 ? '└─' : '├─'}
+                          </span>
+                          <button
+                            onClick={() => onSelectSession(s)}
+                            className="flex-1 text-left min-w-0 group"
+                          >
+                            <span className="text-xs text-ink-secondary group-hover:text-ink-primary truncate block transition-colors">
+                              {s.customName || s.preview.slice(0, 60) || s.sessionId}
+                            </span>
+                          </button>
+                          <span className="text-[10px] text-ink-faint shrink-0 tabular-nums">{s.messageCount}개</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

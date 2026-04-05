@@ -31,6 +31,7 @@ export interface Project {
   updatedAt: string
   goal?: string
   notes?: string
+  folderPath?: string
   sessionIds: string[]
 }
 

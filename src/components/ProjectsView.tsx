@@ -9,6 +9,7 @@ import { ko } from 'date-fns/locale'
 interface Props {
   projects: Project[]
   sessions: Session[]
+  folders?: string[]
   onCreateProject: (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'sessionIds'>) => void
   onUpdateProject: (id: string, data: Partial<Project>) => void
   onDeleteProject: (id: string) => void
@@ -24,7 +25,7 @@ const COLUMNS: { status: ProjectStatus; label: string; emptyLabel: string; heade
 ]
 
 export default function ProjectsView({
-  projects, sessions,
+  projects, sessions, folders,
   onCreateProject, onUpdateProject, onDeleteProject,
   onAssignSession, onSelectSession, onSelectProject,
 }: Props) {
@@ -152,6 +153,7 @@ export default function ProjectsView({
       {modal && (
         <ProjectModal
           project={modal.mode === 'edit' ? modal.project : null}
+          folders={folders}
           onSave={handleSave}
           onClose={() => setModal(null)}
         />
