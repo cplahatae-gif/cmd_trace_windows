@@ -22,4 +22,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('settings:save', data),
   loadSettings:   () =>
     ipcRenderer.invoke('settings:load'),
+  // 프로젝트 관리
+  saveProjects:   (data: Record<string, unknown>[]) =>
+    ipcRenderer.invoke('projects:save', data),
+  loadProjects:   () =>
+    ipcRenderer.invoke('projects:load'),
+  // 세션 내보내기
+  exportSession:  (content: string, format: string, sessionName: string) =>
+    ipcRenderer.invoke('session:export', content, format, sessionName),
 })

@@ -1,8 +1,8 @@
-import { MessageSquare, LayoutDashboard, Settings, Tag, Trash2 } from 'lucide-react'
+import { MessageSquare, LayoutDashboard, Settings, Tag, Trash2, FolderKanban } from 'lucide-react'
 
 interface Props {
-  activeView: 'sessions' | 'dashboard' | 'settings' | 'trash'
-  onViewChange: (v: 'sessions' | 'dashboard' | 'settings' | 'trash') => void
+  activeView: 'sessions' | 'dashboard' | 'projects' | 'settings' | 'trash'
+  onViewChange: (v: 'sessions' | 'dashboard' | 'projects' | 'settings' | 'trash') => void
   allTags: string[]
   selectedTag: string | null
   onTagSelect: (tag: string | null) => void
@@ -22,6 +22,7 @@ export default function Sidebar({
   const navItems = [
     { id: 'sessions' as const, icon: MessageSquare, label: '세션', badge: sessionCount },
     { id: 'dashboard' as const, icon: LayoutDashboard, label: '대시보드' },
+    { id: 'projects' as const, icon: FolderKanban, label: '프로젝트' },
     { id: 'settings' as const, icon: Settings, label: '설정' },
     { id: 'trash' as const, icon: Trash2, label: '휴지통', badge: trashCount },
   ]

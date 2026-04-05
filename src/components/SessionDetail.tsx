@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2 } from 'lucide-react'
-import type { Session, Message, SessionInsights, AppSettings } from '../types'
+import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download } from 'lucide-react'
+import type { Session, Message, SessionInsights, AppSettings, ExportFormat } from '../types'
 import MessageView from './MessageView'
 import InsightsView from './InsightsView'
 
 interface Props {
   session: Session
   settings: AppSettings
-  onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[] }) => Promise<void>
+  onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean }) => Promise<void>
   onDelete: (id: string) => void
 }
 
@@ -23,9 +23,11 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
   const [editName, setEditName] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [isResuming, setIsResuming] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [messageError, setMessageError] = useState<string | null>(null)
   const [insightError, setInsightError] = useState<string | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
 
   const loadMessages = useCallback(async () => {
     if (!window.electronAPI) return
@@ -89,6 +91,31 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
   const handleOpenFolder = () => {
     if (window.electronAPI && session.project) {
       window.electronAPI.openFolder(session.project)
+    }
+  }
+
+  const handleToggleFavorite = () =>
+    onUpdateMeta(session.id, { isFavorited: !session.isFavorited })
+
+  const handleTogglePin = () =>
+    onUpdateMeta(session.id, { isPinned: !session.isPinned })
+
+  const handleExport = async (format: ExportFormat) => {
+    if (!window.electronAPI) return
+    setShowExportMenu(false)
+    setIsExporting(true)
+    try {
+      let content = ''
+      if (format === 'json') {
+        content = JSON.stringify({ session, messages }, null, 2)
+      } else if (format === 'html') {
+        content = buildHtmlExport(session, messages)
+      } else {
+        content = buildMarkdownExport(session, messages)
+      }
+      await window.electronAPI.exportSession(content, format, displayTitle)
+    } finally {
+      setIsExporting(false)
     }
   }
 
@@ -185,7 +212,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
         </div>
 
         {/* 액션 버튼 */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleResume}
             disabled={isResuming}
@@ -198,13 +225,59 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
             <FolderOpen size={12} />
             폴더
           </button>
+
+          {/* 즐겨찾기 */}
           <button
-            onClick={() => window.electronAPI?.resetPanes?.()}
-            title="패널 레이아웃 초기화"
-            className="btn-secondary"
+            onClick={handleToggleFavorite}
+            title={session.isFavorited ? '즐겨찾기 해제' : '즐겨찾기'}
+            className={`p-1.5 rounded-lg transition-colors ${
+              session.isFavorited
+                ? 'text-amber-500 bg-amber-50 hover:bg-amber-100'
+                : 'text-ink-faint hover:text-amber-500 hover:bg-amber-50'
+            }`}
           >
-            ⊞ 리셋
+            <Star size={13} fill={session.isFavorited ? 'currentColor' : 'none'} />
           </button>
+
+          {/* 핀 */}
+          <button
+            onClick={handleTogglePin}
+            title={session.isPinned ? '핀 해제' : '핀'}
+            className={`p-1.5 rounded-lg transition-colors ${
+              session.isPinned
+                ? 'text-brand-500 bg-brand-50 hover:bg-brand-100'
+                : 'text-ink-faint hover:text-brand-500 hover:bg-brand-50'
+            }`}
+          >
+            <Pin size={13} fill={session.isPinned ? 'currentColor' : 'none'} />
+          </button>
+
+          {/* 내보내기 */}
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(v => !v)}
+              disabled={isExporting || messages.length === 0}
+              title="내보내기"
+              className="btn-secondary disabled:opacity-40"
+            >
+              {isExporting ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+              내보내기
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-xl border border-[rgba(0,0,0,0.1)] shadow-panel z-10 py-1">
+                {(['md', 'json', 'html'] as ExportFormat[]).map(fmt => (
+                  <button
+                    key={fmt}
+                    onClick={() => handleExport(fmt)}
+                    className="w-full text-left px-3 py-2 text-xs text-ink-secondary hover:bg-surface-soft transition-colors"
+                  >
+                    {fmt === 'md' ? '📝 Markdown' : fmt === 'json' ? '📦 JSON' : '🌐 HTML'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="ml-auto">
             {showDeleteConfirm ? (
               <div className="flex items-center gap-1.5">
@@ -300,4 +373,50 @@ function formatDuration(start: string, end: string): string {
   const hours = Math.floor(mins / 60)
   const rem = mins % 60
   return rem > 0 ? `${hours}시간 ${rem}분` : `${hours}시간`
+}
+
+function buildMarkdownExport(session: Session, messages: Message[]): string {
+  const title = session.customName || session.preview.slice(0, 80) || session.sessionId
+  const lines = [
+    `# ${title}`,
+    '',
+    `> **프로젝트**: ${session.project}  `,
+    `> **메시지**: ${session.messageCount}개  `,
+    `> **날짜**: ${session.firstTimestamp ? new Date(session.firstTimestamp).toLocaleDateString('ko-KR') : '-'}`,
+    '',
+    '---',
+    '',
+  ]
+  for (const m of messages) {
+    const role = m.role === 'user' ? '👤 **User**' : '🤖 **Assistant**'
+    lines.push(role, '', m.content, '', '---', '')
+  }
+  return lines.join('\n')
+}
+
+function buildHtmlExport(session: Session, messages: Message[]): string {
+  const title = session.customName || session.preview.slice(0, 80) || session.sessionId
+  const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const msgHtml = messages.map(m => `
+    <div class="msg ${m.role}">
+      <div class="role">${m.role === 'user' ? '👤 User' : '🤖 Assistant'}</div>
+      <div class="content">${escape(m.content)}</div>
+    </div>`).join('\n')
+
+  return `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<title>${escape(title)}</title>
+<style>
+  body { font-family: 'Pretendard', sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; background: #f5f6f8; color: #1a1d23; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  .meta { font-size: 0.8rem; color: #9ca3af; margin-bottom: 2rem; }
+  .msg { background: white; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 0.75rem; border: 1px solid rgba(0,0,0,0.08); }
+  .msg.user { border-left: 3px solid #635bff; }
+  .role { font-size: 0.75rem; font-weight: 600; color: #6b7280; margin-bottom: 0.5rem; }
+  .content { white-space: pre-wrap; font-size: 0.875rem; line-height: 1.6; }
+</style></head><body>
+<h1>${escape(title)}</h1>
+<div class="meta">${session.project} · ${session.messageCount}개 메시지</div>
+${msgHtml}
+</body></html>`
 }

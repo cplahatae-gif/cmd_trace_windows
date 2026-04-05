@@ -13,7 +13,25 @@ export interface Session {
   tags: string[]
   customName: string | null
   isDeleted?: boolean
+  isFavorited?: boolean
+  isPinned?: boolean
+  projectId?: string
 }
+
+// ─── 프로젝트 ─────────────────────────────────────────────
+export interface Project {
+  id: string
+  name: string
+  description?: string
+  color: string
+  createdAt: string
+  sessionIds: string[]
+}
+
+export const PROJECT_COLORS = [
+  '#635bff', '#22c55e', '#f59e0b', '#ef4444',
+  '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6',
+] as const
 
 // ─── 메시지 ──────────────────────────────────────────────
 export interface Message {
@@ -56,6 +74,7 @@ export interface SessionInsights {
 export type AgentType = 'claude' | 'opencode'
 export type TerminalType = 'wt' | 'powershell' | 'cmd'
 export type ThemeType = 'dark' | 'light'
+export type ExportFormat = 'md' | 'json' | 'html'
 
 export interface AppSettings {
   terminal: TerminalType
@@ -78,6 +97,9 @@ declare global {
       loadMetadata: () => Promise<Record<string, unknown>>
       saveSettings: (data: Record<string, unknown>) => Promise<{ success: boolean }>
       loadSettings: () => Promise<AppSettings | null>
+      saveProjects: (data: Project[]) => Promise<{ success: boolean }>
+      loadProjects: () => Promise<Project[]>
+      exportSession: (content: string, format: ExportFormat, sessionName: string) => Promise<{ success: boolean; path?: string }>
     }
   }
 }

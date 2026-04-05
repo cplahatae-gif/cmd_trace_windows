@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Search, RefreshCw, Loader2, Trash2 } from 'lucide-react'
+import { Search, RefreshCw, Loader2, Trash2, Star, Pin } from 'lucide-react'
 import type { Session } from '../types'
 
 interface Props {
@@ -155,9 +155,13 @@ function SessionItem({
         </div>
       ) : (
         <>
-          <p className={`text-sm font-medium truncate leading-snug pr-7 ${
-            isSelected ? 'text-brand-700' : 'text-ink-primary'
-          }`}>{displayTitle}</p>
+          <div className="flex items-center gap-1 pr-7">
+            {session.isPinned && <Pin size={10} className="text-brand-400 shrink-0" fill="currentColor" />}
+            {session.isFavorited && <Star size={10} className="text-amber-400 shrink-0" fill="currentColor" />}
+            <p className={`text-sm font-medium truncate leading-snug ${
+              isSelected ? 'text-brand-700' : 'text-ink-primary'
+            }`}>{displayTitle}</p>
+          </div>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-xs text-ink-muted truncate flex-1">{projectName}</span>
             <span className="text-xs text-ink-faint shrink-0">{relativeTime}</span>

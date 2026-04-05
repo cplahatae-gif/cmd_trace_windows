@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Tray } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog, nativeImage } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -10,9 +10,10 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
 // ─── 상수 (중복 제거) ──────────────────────────────────────
-const CLAUDE_BASE    = path.join(os.homedir(), '.claude', 'projects')
-const META_PATH      = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json')
-const SETTINGS_PATH  = path.join(os.homedir(), '.claude', 'cmdtrace-settings.json')
+const CLAUDE_BASE     = path.join(os.homedir(), '.claude', 'projects')
+const META_PATH       = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json')
+const SETTINGS_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-settings.json')
+const PROJECTS_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-projects.json')
 
 // 세션 재개 패널 카운터 (0~3, 2×2 그리드 순환)
 let sessionPaneCount = 0
@@ -45,7 +46,7 @@ function createWindow() {
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#ffffff',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -221,6 +222,49 @@ ipcMain.handle('settings:load', async () => {
     return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'))
   } catch {
     return null
+  }
+})
+
+// ─── IPC: 프로젝트 저장/불러오기 ──────────────────────────
+ipcMain.handle('projects:save', async (_event, data: unknown[]) => {
+  try {
+    fs.writeFileSync(PROJECTS_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    return { success: true }
+  } catch (err) {
+    console.error('프로젝트 저장 실패:', err)
+    return { success: false }
+  }
+})
+
+ipcMain.handle('projects:load', async () => {
+  if (!fs.existsSync(PROJECTS_PATH)) return []
+  try {
+    return JSON.parse(fs.readFileSync(PROJECTS_PATH, 'utf-8'))
+  } catch {
+    return []
+  }
+})
+
+// ─── IPC: 세션 내보내기 ────────────────────────────────────
+ipcMain.handle('session:export', async (_event, content: string, format: string, sessionName: string) => {
+  const ext = format === 'json' ? 'json' : format === 'html' ? 'html' : 'md'
+  const safe = sessionName.replace(/[^a-zA-Z0-9가-힣_\- ]/g, '').slice(0, 50) || 'session'
+  const { filePath, canceled } = await dialog.showSaveDialog({
+    title: '세션 내보내기',
+    defaultPath: `${safe}.${ext}`,
+    filters: [
+      { name: ext.toUpperCase(), extensions: [ext] },
+      { name: '모든 파일', extensions: ['*'] },
+    ],
+  })
+  if (canceled || !filePath) return { success: false }
+  try {
+    fs.writeFileSync(filePath, content, 'utf-8')
+    shell.showItemInFolder(filePath)
+    return { success: true, path: filePath }
+  } catch (err) {
+    console.error('내보내기 실패:', err)
+    return { success: false }
   }
 })
 
@@ -545,6 +589,23 @@ interface InsightsData {
 // ─── 앱 초기화 ─────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow()
+
+  // Tray 아이콘 초기화
+  try {
+    const icon = nativeImage.createEmpty()
+    tray = new Tray(icon)
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'CmdTrace 열기', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+      { type: 'separator' },
+      { label: '종료', click: () => app.quit() },
+    ])
+    tray.setToolTip('CmdTrace')
+    tray.setContextMenu(contextMenu)
+    tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus() })
+  } catch (err) {
+    console.error('Tray 초기화 실패:', err)
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
