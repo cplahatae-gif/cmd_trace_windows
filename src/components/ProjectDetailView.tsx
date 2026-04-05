@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react'
 import { ArrowLeft, Edit2, Search, Star, Pin, X, MessageSquare } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatDistanceToNow } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import type { Project, ProjectStatus, Session } from '../types'
@@ -34,7 +33,8 @@ export default function ProjectDetailView({
 
   // 이 프로젝트에 속한 세션
   const projectSessions = useMemo(
-    () => sessions.filter(s => s.projectId === project.id && !s.isDeleted),
+    () => sessions.filter(s => s.projectId === project.id && !s.isDeleted)
+      .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()),
     [sessions, project.id]
   )
 
@@ -57,25 +57,28 @@ export default function ProjectDetailView({
     if (projectSessions.length === 0) return null
     return new Date(Math.max(...projectSessions.map(s => new Date(s.lastActivity).getTime())))
   }, [projectSessions])
-  const firstActivity = useMemo(() => {
-    if (projectSessions.length === 0) return null
-    const ts = projectSessions.flatMap(s => s.firstTimestamp ? [new Date(s.firstTimestamp).getTime()] : [])
-    return ts.length > 0 ? new Date(Math.min(...ts)) : null
+
+  // 프로젝트 요약: 세션 preview에서 자동 추출
+  const projectSummary = useMemo(() => {
+    if (projectSessions.length === 0) return []
+    // 최근 세션 순으로 preview(첫 사용자 메시지)를 수집
+    const previews = projectSessions
+      .filter(s => s.preview && s.preview.trim().length > 5)
+      .slice(0, 8)
+      .map(s => ({
+        title: s.customName || s.preview.slice(0, 60),
+        preview: s.preview.slice(0, 120),
+        date: s.lastActivity,
+        messageCount: s.messageCount,
+      }))
+    return previews
   }, [projectSessions])
 
-  // 30일 활동 차트
-  const activityData = useMemo(() => {
-    const now = new Date()
-    return Array.from({ length: 30 }, (_, i) => {
-      const d = new Date(now)
-      d.setDate(d.getDate() - (29 - i))
-      const dateStr = d.toDateString()
-      const label = i === 29 ? '오늘' : i === 28 ? '어제' : `${d.getMonth() + 1}/${d.getDate()}`
-      return {
-        label,
-        count: projectSessions.filter(s => new Date(s.lastActivity).toDateString() === dateStr).length,
-      }
-    })
+  // 프로젝트 폴더 경로 (공통)
+  const projectFolder = useMemo(() => {
+    if (projectSessions.length === 0) return null
+    const folder = projectSessions[0]?.project
+    return folder?.split(/[\\/]/).pop() || folder
   }, [projectSessions])
 
   const handleSaveModal = (data: ProjectFormData) => {
@@ -98,22 +101,9 @@ export default function ProjectDetailView({
     setIsEditingNotes(false)
   }
 
-  const formatDateRange = () => {
-    if (!firstActivity && !lastActivity) return '-'
-    const fmt = (d: Date) => `${d.getMonth() + 1}.${String(d.getDate()).padStart(2, '0')}`
-    if (firstActivity && lastActivity) {
-      if (firstActivity.toDateString() === lastActivity.toDateString()) {
-        return `${firstActivity.getFullYear()}.${fmt(firstActivity)}`
-      }
-      return `${firstActivity.getFullYear()}.${fmt(firstActivity)} ~ ${fmt(lastActivity)}`
-    }
-    return lastActivity ? formatDistanceToNow(lastActivity, { addSuffix: true, locale: ko }) : '-'
-  }
-
   const stats = [
     { label: '세션', value: projectSessions.length.toString(), icon: '💬' },
     { label: '메시지', value: totalMessages.toLocaleString(), icon: '📨' },
-    { label: '활동 기간', value: formatDateRange(), icon: '📅' },
     {
       label: '마지막 활동',
       value: lastActivity ? formatDistanceToNow(lastActivity, { addSuffix: true, locale: ko }) : '-',
@@ -190,85 +180,46 @@ export default function ProjectDetailView({
           </div>
         </div>
 
-        {/* 통계 카드 */}
-        <div className="grid grid-cols-4 gap-3">
+        {/* 통계 + 폴더 정보 */}
+        <div className="flex gap-3">
           {stats.map(stat => (
-            <div key={stat.label} className="bg-white rounded-xl p-4 border border-[rgba(0,0,0,0.08)] shadow-card">
-              <div className="text-lg mb-1.5">{stat.icon}</div>
-              <div className="text-2xl font-bold text-ink-primary leading-none mb-0.5">{stat.value}</div>
+            <div key={stat.label} className="flex-1 bg-white rounded-xl p-3.5 border border-[rgba(0,0,0,0.08)] shadow-card">
+              <div className="text-base mb-1">{stat.icon}</div>
+              <div className="text-xl font-bold text-ink-primary leading-none mb-0.5">{stat.value}</div>
               <div className="text-xs text-ink-muted">{stat.label}</div>
             </div>
           ))}
+          {projectFolder && (
+            <div className="flex-1 bg-white rounded-xl p-3.5 border border-[rgba(0,0,0,0.08)] shadow-card">
+              <div className="text-base mb-1">📂</div>
+              <div className="text-sm font-semibold text-ink-primary leading-snug truncate">{projectFolder}</div>
+              <div className="text-xs text-ink-muted">작업 폴더</div>
+            </div>
+          )}
         </div>
 
-        {/* 30일 활동 차트 */}
-        {projectSessions.length > 0 && (
+        {/* 프로젝트 요약 — 세션 preview 기반 자동 생성 */}
+        {projectSummary.length > 0 && (
           <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card p-5">
-            <h3 className="text-sm font-semibold text-ink-primary mb-4">최근 30일 활동</h3>
-            <ResponsiveContainer width="100%" height={120}>
-              <BarChart data={activityData} barSize={6} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 10, fill: '#9ca3af' }}
-                  tickLine={false}
-                  axisLine={false}
-                  interval={4}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: '#9ca3af' }}
-                  tickLine={false}
-                  axisLine={false}
-                  allowDecimals={false}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: '#fff',
-                    border: '1px solid rgba(0,0,0,0.1)',
-                    borderRadius: '10px',
-                    fontSize: '12px',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-                  }}
-                  formatter={(value: number) => [`${value}개`, '세션']}
-                />
-                <Bar dataKey="count" fill="#635bff" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* 세션 목록 */}
-        <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card">
-          <div className="px-4 py-3 border-b border-[rgba(0,0,0,0.06)] flex items-center gap-3">
-            <span className="text-sm font-semibold text-ink-primary">세션 목록</span>
-            <span className="text-xs text-ink-muted">({projectSessions.length}개)</span>
-            <div className="ml-auto relative">
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
-              <input
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="세션 검색..."
-                className="pl-8 pr-3 py-1.5 bg-surface-soft border border-[rgba(0,0,0,0.08)] rounded-lg text-xs text-ink-primary focus:outline-none focus:border-brand-400 w-44"
-              />
+            <h3 className="text-sm font-semibold text-ink-primary mb-3">프로젝트 요약</h3>
+            <p className="text-xs text-ink-muted mb-3">최근 세션에서 어떤 작업을 했는지 자동으로 정리합니다.</p>
+            <div className="space-y-2">
+              {projectSummary.map((item, i) => (
+                <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg bg-surface-soft border border-[rgba(0,0,0,0.04)]">
+                  <span className="text-ink-faint text-[10px] font-mono shrink-0 mt-0.5">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-ink-primary leading-relaxed">{item.preview}</p>
+                    <div className="flex items-center gap-2 mt-1 text-[10px] text-ink-faint">
+                      <span>{item.messageCount}개 메시지</span>
+                      <span>·</span>
+                      <span>{formatDistanceToNow(new Date(item.date), { addSuffix: true, locale: ko })}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-
-          <div className="divide-y divide-[rgba(0,0,0,0.05)]">
-            {filteredSessions.length === 0 ? (
-              <div className="flex items-center justify-center py-8 text-ink-faint text-sm">
-                {projectSessions.length === 0 ? '세션이 없습니다' : '검색 결과가 없습니다'}
-              </div>
-            ) : (
-              filteredSessions.map(s => (
-                <SessionRow
-                  key={s.id}
-                  session={s}
-                  onSelect={() => onSelectSession(s)}
-                  onRemove={() => onAssignSession(s.id, null)}
-                />
-              ))
-            )}
-          </div>
-        </div>
+        )}
 
         {/* 메모 */}
         <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card p-5">
@@ -305,6 +256,40 @@ export default function ProjectDetailView({
             <p className="text-sm text-ink-faint italic">메모가 없습니다. 편집을 눌러 작성하세요.</p>
           )}
         </div>
+
+        {/* 세션 목록 */}
+        <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card">
+          <div className="px-4 py-3 border-b border-[rgba(0,0,0,0.06)] flex items-center gap-3">
+            <span className="text-sm font-semibold text-ink-primary">세션 목록</span>
+            <span className="text-xs text-ink-muted">({projectSessions.length}개)</span>
+            <div className="ml-auto relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="세션 검색..."
+                className="pl-8 pr-3 py-1.5 bg-surface-soft border border-[rgba(0,0,0,0.08)] rounded-lg text-xs text-ink-primary focus:outline-none focus:border-brand-400 w-44"
+              />
+            </div>
+          </div>
+
+          <div className="divide-y divide-[rgba(0,0,0,0.05)] max-h-[400px] overflow-y-auto scrollbar-thin">
+            {filteredSessions.length === 0 ? (
+              <div className="flex items-center justify-center py-8 text-ink-faint text-sm">
+                {projectSessions.length === 0 ? '세션이 없습니다' : '검색 결과가 없습니다'}
+              </div>
+            ) : (
+              filteredSessions.map(s => (
+                <SessionRow
+                  key={s.id}
+                  session={s}
+                  onSelect={() => onSelectSession(s)}
+                  onRemove={() => onAssignSession(s.id, null)}
+                />
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 편집 모달 */}
@@ -329,10 +314,9 @@ function SessionRow({
 }) {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const title = session.customName || session.preview.slice(0, 80) || session.sessionId
-  const projectName = session.project.split(/[\\/]/).pop() || session.project
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 hover:bg-surface-soft transition-colors group">
+    <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-soft transition-colors group">
       <div className="flex items-center gap-1 shrink-0">
         {session.isPinned && <Pin size={11} className="text-brand-400" fill="currentColor" />}
         {session.isFavorited && <Star size={11} className="text-amber-400" fill="currentColor" />}
@@ -340,8 +324,7 @@ function SessionRow({
       </div>
 
       <button onClick={onSelect} className="flex-1 text-left min-w-0">
-        <p className="text-sm font-medium text-ink-primary truncate">{title}</p>
-        <p className="text-xs text-ink-muted truncate">{projectName}</p>
+        <p className="text-sm text-ink-primary truncate">{title}</p>
       </button>
 
       <span className="text-xs text-ink-faint shrink-0 tabular-nums">{session.messageCount}개</span>
