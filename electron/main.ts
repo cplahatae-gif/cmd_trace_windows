@@ -281,18 +281,44 @@ function obsidianRequest(method: string, apiPath: string, body?: string): Promis
 }
 
 ipcMain.handle('obsidian:searchNote', async (_event, projectName: string) => {
+  /** 검색어로 74. Projects 폴더 내 노트 찾기 */
+  async function searchInProjects(query: string): Promise<string | null> {
+    const res = await obsidianRequest('POST', `/search/simple/?query=${encodeURIComponent(query)}`)
+    if (!res.ok) return null
+    const results: { filename: string; score: number }[] = JSON.parse(res.data)
+    if (!Array.isArray(results) || results.length === 0) return null
+    const match = results.find(r => r.filename.includes('74. Projects'))
+    return match ? match.filename : null
+  }
+
   try {
-    const res = await obsidianRequest('POST', `/search/simple/?query=${encodeURIComponent(projectName)}`)
-    if (!res.ok) return { found: false, error: 'Obsidian 연결 실패. Obsidian이 실행 중인지 확인하세요.' }
+    // 1차: 프로젝트명으로 검색
+    let found = await searchInProjects(projectName)
 
-    const results: string[] = JSON.parse(res.data)
-    // 프로젝트 노트 경로 필터 (74. Projects 폴더)
-    const match = results.find((r: string) => r.includes('74. Projects'))
-      || results.find((r: string) => r.includes('Projects'))
-      || results[0]
+    // 2차: 실패 시 프로젝트명에서 주요 단어 추출하여 재시도 (영문 우선)
+    if (!found) {
+      const words = projectName.split(/[\s\-_]+/).filter(w => w.length > 2)
+      // 영문 키워드를 먼저 시도 (프로젝트 고유명이 영문인 경우가 많음)
+      const sorted = [...words].sort((a, b) => {
+        const aEng = /^[a-zA-Z]/.test(a) ? 0 : 1
+        const bEng = /^[a-zA-Z]/.test(b) ? 0 : 1
+        return aEng - bEng
+      })
+      for (const word of sorted) {
+        found = await searchInProjects(word)
+        if (found) break
+      }
+    }
 
-    return match ? { found: true, path: match } : { found: false, error: '노트를 찾을 수 없습니다.' }
-  } catch {
+    if (found) return { found: true, path: found }
+
+    // 연결 확인 (검색은 됐는데 결과가 없는 건지, 연결 자체가 안 되는지)
+    const ping = await obsidianRequest('GET', '/')
+    if (!ping.ok) return { found: false, error: 'Obsidian 연결 실패. Obsidian이 실행 중인지 확인하세요.' }
+
+    return { found: false, error: `"${projectName}" 관련 프로젝트 노트를 찾을 수 없습니다.` }
+  } catch (err) {
+    console.error('Obsidian 검색 실패:', err)
     return { found: false, error: 'Obsidian API 요청 실패' }
   }
 })
@@ -655,7 +681,9 @@ if (!gotTheLock) {
   app.quit()
 } else {
   if (isDev) {
-    app.setAsDefaultProtocolClient('cmdtrace', process.execPath, [path.resolve(process.argv[1])])
+    // dev 모드: electron.exe + main.js 절대 경로로 레지스트리 등록
+    const mainScript = path.resolve(__dirname, 'main.js')
+    app.setAsDefaultProtocolClient('cmdtrace', process.execPath, [mainScript])
   } else {
     app.setAsDefaultProtocolClient('cmdtrace')
   }
