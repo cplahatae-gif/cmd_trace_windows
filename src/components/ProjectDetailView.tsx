@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ArrowLeft, Edit2, Search, Star, Pin, X, MessageSquare } from 'lucide-react'
+import { ArrowLeft, Edit2, Search, Star, Pin, X, MessageSquare, ExternalLink } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import type { Project, ProjectStatus, Session } from '../types'
@@ -28,6 +28,8 @@ export default function ProjectDetailView({
   const [showEditModal, setShowEditModal] = useState(false)
   const [showStatusMenu, setShowStatusMenu] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [obsidianStatus, setObsidianStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [obsidianError, setObsidianError] = useState<string | null>(null)
 
   // 이 프로젝트에 속한 세션
   const projectSessions = useMemo(
@@ -97,6 +99,33 @@ export default function ProjectDetailView({
     const folder = projectSessions[0]?.project
     return folder?.split(/[\\/]/).pop() || folder
   }, [projectSessions])
+
+  const handleOpenInObsidian = async () => {
+    if (!window.electronAPI) return
+    setObsidianStatus('loading')
+    setObsidianError(null)
+
+    // 1. 캐시된 경로가 있으면 바로 열기
+    if (project.obsidianNotePath) {
+      const res = await window.electronAPI.openObsidianNote(project.obsidianNotePath)
+      setObsidianStatus(res.success ? 'idle' : 'error')
+      if (!res.success) setObsidianError(res.error || 'Obsidian 노트를 열 수 없습니다.')
+      return
+    }
+
+    // 2. 프로젝트명으로 검색
+    const search = await window.electronAPI.searchObsidianNote(project.name)
+    if (search.found && search.path) {
+      // 경로 캐시
+      onUpdateProject(project.id, { obsidianNotePath: search.path })
+      const res = await window.electronAPI.openObsidianNote(search.path)
+      setObsidianStatus(res.success ? 'idle' : 'error')
+      if (!res.success) setObsidianError(res.error || 'Obsidian 노트를 열 수 없습니다.')
+    } else {
+      setObsidianStatus('error')
+      setObsidianError(search.error || 'Obsidian 노트를 찾을 수 없습니다.')
+    }
+  }
 
   const handleSaveModal = (data: ProjectFormData) => {
     onUpdateProject(project.id, data)
@@ -172,7 +201,21 @@ export default function ProjectDetailView({
                 >
                   <Edit2 size={14} />
                 </button>
+
+                <button
+                  onClick={handleOpenInObsidian}
+                  disabled={obsidianStatus === 'loading'}
+                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-purple-600 bg-purple-50 border border-purple-100 rounded-lg hover:bg-purple-100 transition-colors disabled:opacity-50"
+                  title="Obsidian에서 열기"
+                >
+                  <ExternalLink size={11} />
+                  {obsidianStatus === 'loading' ? '검색 중...' : 'Obsidian'}
+                </button>
               </div>
+
+              {obsidianError && (
+                <p className="text-[11px] text-red-500 mt-1">{obsidianError}</p>
+              )}
 
               {project.description && (
                 <p className="text-sm text-ink-secondary mt-1">{project.description}</p>

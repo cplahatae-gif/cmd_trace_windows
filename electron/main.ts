@@ -3,6 +3,7 @@ import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
+import * as https from 'https'
 
 const isDev = process.env.ELECTRON_DEV === 'true'
 
@@ -14,6 +15,11 @@ const CLAUDE_BASE     = path.join(os.homedir(), '.claude', 'projects')
 const META_PATH       = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json')
 const SETTINGS_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-settings.json')
 const PROJECTS_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-projects.json')
+
+// ─── Obsidian 연동 상수 ────────────────────────────────────
+const OBSIDIAN_API_BASE  = 'https://127.0.0.1:27124'
+const OBSIDIAN_API_TOKEN = 'd281ea3d5337e7c72b7a7fb11893081a78bfd1e2ea85b48768ef8269f21084b3'
+const OBSIDIAN_VAULT_NAME = 'Gpters Study 21기 옵시디언 온보딩_v2'
 
 // 세션 재개 패널 카운터 (0~3, 2×2 그리드 순환)
 let sessionPaneCount = 0
@@ -242,6 +248,63 @@ ipcMain.handle('projects:load', async () => {
     return JSON.parse(fs.readFileSync(PROJECTS_PATH, 'utf-8'))
   } catch {
     return []
+  }
+})
+
+// ─── IPC: Obsidian 연동 ────────────────────────────────────
+
+/** Obsidian REST API 요청 헬퍼 (자체서명 인증서 허용) */
+function obsidianRequest(method: string, apiPath: string, body?: string): Promise<{ ok: boolean; status: number; data: string }> {
+  return new Promise((resolve) => {
+    const url = new URL(apiPath, OBSIDIAN_API_BASE)
+    const options = {
+      method,
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname + url.search,
+      rejectUnauthorized: false,
+      headers: {
+        'Authorization': `Bearer ${OBSIDIAN_API_TOKEN}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+    }
+
+    const req = https.request(options, (res) => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => resolve({ ok: res.statusCode === 200, status: res.statusCode || 0, data }))
+    })
+    req.on('error', () => resolve({ ok: false, status: 0, data: '' }))
+    if (body) req.write(body)
+    req.end()
+  })
+}
+
+ipcMain.handle('obsidian:searchNote', async (_event, projectName: string) => {
+  try {
+    const res = await obsidianRequest('POST', `/search/simple/?query=${encodeURIComponent(projectName)}`)
+    if (!res.ok) return { found: false, error: 'Obsidian 연결 실패. Obsidian이 실행 중인지 확인하세요.' }
+
+    const results: string[] = JSON.parse(res.data)
+    // 프로젝트 노트 경로 필터 (74. Projects 폴더)
+    const match = results.find((r: string) => r.includes('74. Projects'))
+      || results.find((r: string) => r.includes('Projects'))
+      || results[0]
+
+    return match ? { found: true, path: match } : { found: false, error: '노트를 찾을 수 없습니다.' }
+  } catch {
+    return { found: false, error: 'Obsidian API 요청 실패' }
+  }
+})
+
+ipcMain.handle('obsidian:openNote', async (_event, filePath: string) => {
+  try {
+    const uri = `obsidian://open?vault=${encodeURIComponent(OBSIDIAN_VAULT_NAME)}&file=${encodeURIComponent(filePath)}`
+    await shell.openExternal(uri)
+    return { success: true }
+  } catch (err) {
+    console.error('Obsidian 노트 열기 실패:', err)
+    return { success: false, error: 'Obsidian 노트를 열 수 없습니다.' }
   }
 })
 
@@ -586,9 +649,38 @@ interface InsightsData {
   totalDurationMs: number
 }
 
+// ─── 딥링크 프로토콜 핸들러 (cmdtrace://) ──────────────────
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  if (isDev) {
+    app.setAsDefaultProtocolClient('cmdtrace', process.execPath, [path.resolve(process.argv[1])])
+  } else {
+    app.setAsDefaultProtocolClient('cmdtrace')
+  }
+
+  app.on('second-instance', (_event, commandLine) => {
+    const deepLink = commandLine.find(arg => arg.startsWith('cmdtrace://'))
+    if (deepLink && mainWindow) {
+      mainWindow.webContents.send('deeplink:navigate', deepLink)
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
+
 // ─── 앱 초기화 ─────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow()
+
+  // 시작 시 딥링크 확인 (Windows에서는 process.argv에 URL이 들어옴)
+  const deepLink = process.argv.find(arg => arg.startsWith('cmdtrace://'))
+  if (deepLink && mainWindow) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      mainWindow?.webContents.send('deeplink:navigate', deepLink)
+    })
+  }
 
   // Tray 아이콘 초기화
   try {

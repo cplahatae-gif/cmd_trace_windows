@@ -167,6 +167,27 @@ export default function App() {
     setFilteredSessions(result)
   }, [searchQuery, activeSessions, selectedTag])
 
+  // 딥링크 수신 (cmdtrace://project/{id})
+  useEffect(() => {
+    window.electronAPI?.onDeepLink?.((url: string) => {
+      const projectMatch = url.match(/cmdtrace:\/\/project\/(.+)/)
+      if (projectMatch) {
+        const projectId = decodeURIComponent(projectMatch[1])
+        setActiveView('projects')
+        setSelectedProjectId(projectId)
+      }
+      const sessionMatch = url.match(/cmdtrace:\/\/session\/(.+)/)
+      if (sessionMatch) {
+        const sessionId = decodeURIComponent(sessionMatch[1])
+        const session = sessions.find(s => s.id === sessionId || s.sessionId === sessionId)
+        if (session) {
+          setActiveView('sessions')
+          setSelectedSession(session)
+        }
+      }
+    })
+  }, [sessions])
+
   // 뷰 전환 시 프로젝트 상세 초기화
   useEffect(() => {
     if (activeView !== 'projects') setSelectedProjectId(null)
