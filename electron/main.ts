@@ -680,13 +680,11 @@ const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
 } else {
-  // dev 모드: setAsDefaultProtocolClient가 Electron에서 URL을 모듈로 해석하는 문제 있음
-  // → scripts/register-protocol.ps1 로 배치 래퍼를 레지스트리에 직접 등록
-  if (!isDev) {
-    app.setAsDefaultProtocolClient('cmdtrace')
-  }
+  // setAsDefaultProtocolClient 사용 금지 — Electron이 URL을 모듈 경로로 해석하는 버그 있음
+  // 프로토콜 등록은 scripts/register-protocol.ps1 배치 래퍼로 수동 등록
 
   app.on('second-instance', (_event, commandLine) => {
+    // 앱 실행 중 딥링크 클릭 시: second-instance에서 환경변수 또는 argv로 URL 전달
     const deepLink = commandLine.find(arg => arg.startsWith('cmdtrace://'))
     if (deepLink && mainWindow) {
       mainWindow.webContents.send('deeplink:navigate', deepLink)
@@ -700,8 +698,8 @@ if (!gotTheLock) {
 app.whenReady().then(() => {
   createWindow()
 
-  // 시작 시 딥링크 확인 (Windows에서는 process.argv에 URL이 들어옴)
-  const deepLink = process.argv.find(arg => arg.startsWith('cmdtrace://'))
+  // 시작 시 딥링크 확인 (환경 변수 또는 process.argv에서 URL 읽기)
+  const deepLink = process.env.CMDTRACE_DEEPLINK || process.argv.find(arg => arg.startsWith('cmdtrace://'))
   if (deepLink && mainWindow) {
     mainWindow.webContents.once('did-finish-load', () => {
       mainWindow?.webContents.send('deeplink:navigate', deepLink)
