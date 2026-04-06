@@ -19,9 +19,9 @@ interface Props {
 }
 
 const COLUMNS: { status: ProjectStatus; label: string; emptyLabel: string; headerColor: string }[] = [
-  { status: 'active',   label: '진행 중',   emptyLabel: '진행 중인 프로젝트 없음', headerColor: 'bg-green-500' },
-  { status: 'pending',  label: '대기 중',   emptyLabel: '대기 중인 프로젝트 없음', headerColor: 'bg-amber-500' },
-  { status: 'archived', label: '아카이브',  emptyLabel: '아카이브 없음',          headerColor: 'bg-gray-400' },
+  { status: 'active',    label: '진행 중',   emptyLabel: '진행 중인 프로젝트 없음', headerColor: 'bg-green-500' },
+  { status: 'completed', label: '완료',     emptyLabel: '완료된 프로젝트 없음',    headerColor: 'bg-blue-500' },
+  { status: 'archived',  label: '아카이브',  emptyLabel: '아카이브 없음',          headerColor: 'bg-gray-400' },
 ]
 
 export default function ProjectsView({
@@ -35,9 +35,9 @@ export default function ProjectsView({
   const [dragOverColumn, setDragOverColumn] = useState<ProjectStatus | null>(null)
 
   const grouped = useMemo(() => ({
-    active:   projects.filter(p => (p.status || 'active') === 'active'),
-    pending:  projects.filter(p => p.status === 'pending'),
-    archived: projects.filter(p => p.status === 'archived'),
+    active:    projects.filter(p => (p.status || 'active') === 'active'),
+    completed: projects.filter(p => p.status === 'completed'),
+    archived:  projects.filter(p => p.status === 'archived'),
   }), [projects])
 
   const getSessionCount = (projectId: string) =>
@@ -217,11 +217,6 @@ function KanbanCard({
           )}
         </div>
       </div>
-
-      {/* 목표 */}
-      {project.goal && (
-        <p className="text-[11px] text-brand-500 mt-1.5 truncate pl-[18px]">🎯 {project.goal}</p>
-      )}
 
       {/* 하단 메타 */}
       <div className="flex items-center gap-2 mt-2 pl-[18px] text-[11px] text-ink-faint">

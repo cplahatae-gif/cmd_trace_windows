@@ -19,7 +19,7 @@ export interface Session {
 }
 
 // ─── 프로젝트 ─────────────────────────────────────────────
-export type ProjectStatus = 'active' | 'pending' | 'archived'
+export type ProjectStatus = 'active' | 'completed' | 'archived'
 
 export interface Project {
   id: string
@@ -29,9 +29,8 @@ export interface Project {
   status: ProjectStatus
   createdAt: string
   updatedAt: string
-  goal?: string
-  notes?: string
   folderPath?: string
+  obsidianNotePath?: string
   sessionIds: string[]
 }
 

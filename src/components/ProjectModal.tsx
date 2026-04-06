@@ -8,8 +8,6 @@ export interface ProjectFormData {
   description: string
   color: string
   status: ProjectStatus
-  goal: string
-  notes: string
   folderPath: string
 }
 
@@ -21,9 +19,9 @@ interface Props {
 }
 
 const STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = [
-  { value: 'active',   label: '진행 중' },
-  { value: 'pending',  label: '대기 중' },
-  { value: 'archived', label: '아카이브' },
+  { value: 'active',    label: '진행 중' },
+  { value: 'completed', label: '완료' },
+  { value: 'archived',  label: '아카이브' },
 ]
 
 export default function ProjectModal({ project, folders, onSave, onClose }: Props) {
@@ -31,8 +29,6 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
   const [description, setDescription] = useState('')
   const [color, setColor]         = useState<string>(PROJECT_COLORS[0])
   const [status, setStatus]       = useState<ProjectStatus>('active')
-  const [goal, setGoal]           = useState('')
-  const [notes, setNotes]         = useState('')
   const [folderPath, setFolderPath] = useState('')
 
   useEffect(() => {
@@ -41,8 +37,6 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
       setDescription(project.description || '')
       setColor(project.color as string)
       setStatus(project.status || 'active')
-      setGoal(project.goal || '')
-      setNotes(project.notes || '')
       setFolderPath(project.folderPath || '')
     }
   }, [project])
@@ -55,8 +49,6 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
       description: description.trim(),
       color,
       status,
-      goal: goal.trim(),
-      notes: notes.trim(),
       folderPath: folderPath.trim(),
     })
   }
@@ -117,8 +109,8 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
                     status === opt.value
                       ? opt.value === 'active'
                         ? 'bg-green-50 text-green-600 border-green-200'
-                        : opt.value === 'pending'
-                        ? 'bg-amber-50 text-amber-600 border-amber-200'
+                        : opt.value === 'completed'
+                        ? 'bg-blue-50 text-blue-600 border-blue-200'
                         : 'bg-surface-subtle text-ink-secondary border-[rgba(0,0,0,0.12)]'
                       : 'bg-white text-ink-muted border-[rgba(0,0,0,0.08)] hover:bg-surface-soft'
                   }`}
@@ -143,17 +135,6 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
                 />
               ))}
             </div>
-          </div>
-
-          {/* 목표 */}
-          <div>
-            <label className="block text-xs font-medium text-ink-secondary mb-1.5">목표 (선택)</label>
-            <input
-              value={goal}
-              onChange={e => setGoal(e.target.value)}
-              className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-              placeholder="예: 4월까지 결제 모듈 완성"
-            />
           </div>
 
           {/* 연결 폴더 */}
@@ -181,18 +162,6 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
                 placeholder="C:/Users/...폴더 경로..."
               />
             )}
-          </div>
-
-          {/* 메모 */}
-          <div>
-            <label className="block text-xs font-medium text-ink-secondary mb-1.5">메모 (선택)</label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              rows={4}
-              className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 resize-none"
-              placeholder="작업 내용, 참고사항, 진행 현황..."
-            />
           </div>
 
           <div className="flex gap-2 pt-2">

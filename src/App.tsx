@@ -46,7 +46,8 @@ export default function App() {
       if (Array.isArray(saved)) {
         const normalized = (saved as Project[]).map(p => ({
           ...p,
-          status: (p.status as ProjectStatus) || 'active',
+          // 마이그레이션: pending → completed (Obsidian 상태와 통일)
+          status: (p.status as string) === 'pending' ? 'completed' as ProjectStatus : (p.status as ProjectStatus) || 'active',
           updatedAt: p.updatedAt || p.createdAt,
         }))
         setProjects(normalized)

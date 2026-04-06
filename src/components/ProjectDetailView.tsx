@@ -17,9 +17,9 @@ interface Props {
 }
 
 const STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = [
-  { value: 'active',   label: '진행 중' },
-  { value: 'pending',  label: '대기 중' },
-  { value: 'archived', label: '아카이브' },
+  { value: 'active',    label: '진행 중' },
+  { value: 'completed', label: '완료' },
+  { value: 'archived',  label: '아카이브' },
 ]
 
 export default function ProjectDetailView({
@@ -28,8 +28,6 @@ export default function ProjectDetailView({
   const [showEditModal, setShowEditModal] = useState(false)
   const [showStatusMenu, setShowStatusMenu] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [isEditingNotes, setIsEditingNotes] = useState(false)
-  const [notesInput, setNotesInput] = useState(project.notes || '')
 
   // 이 프로젝트에 속한 세션
   const projectSessions = useMemo(
@@ -110,16 +108,6 @@ export default function ProjectDetailView({
     setShowStatusMenu(false)
   }
 
-  const handleSaveNotes = () => {
-    onUpdateProject(project.id, { notes: notesInput.trim() })
-    setIsEditingNotes(false)
-  }
-
-  const handleCancelNotes = () => {
-    setNotesInput(project.notes || '')
-    setIsEditingNotes(false)
-  }
-
   const stats = [
     { label: '세션', value: projectSessions.length.toString(), icon: '💬' },
     { label: '메시지', value: totalMessages.toLocaleString(), icon: '📨' },
@@ -188,12 +176,6 @@ export default function ProjectDetailView({
 
               {project.description && (
                 <p className="text-sm text-ink-secondary mt-1">{project.description}</p>
-              )}
-              {project.goal && (
-                <div className="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 bg-brand-50 border border-brand-100 rounded-lg">
-                  <span className="text-xs">🎯</span>
-                  <span className="text-xs text-brand-700 font-medium">{project.goal}</span>
-                </div>
               )}
             </div>
           </div>
@@ -266,42 +248,6 @@ export default function ProjectDetailView({
             )}
           </div>
         )}
-
-        {/* 메모 */}
-        <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-ink-primary">메모</h3>
-            {!isEditingNotes && (
-              <button
-                onClick={() => { setNotesInput(project.notes || ''); setIsEditingNotes(true) }}
-                className="text-xs text-ink-muted hover:text-ink-secondary px-2.5 py-1 rounded-lg hover:bg-surface-subtle transition-colors"
-              >
-                편집
-              </button>
-            )}
-          </div>
-
-          {isEditingNotes ? (
-            <div className="space-y-2">
-              <textarea
-                autoFocus
-                value={notesInput}
-                onChange={e => setNotesInput(e.target.value)}
-                rows={6}
-                className="w-full px-3 py-2 border border-brand-300 rounded-lg text-sm text-ink-primary focus:outline-none focus:ring-2 focus:ring-brand-100 resize-none"
-                placeholder="작업 내용, 참고사항, 진행 현황..."
-              />
-              <div className="flex gap-2">
-                <button onClick={handleSaveNotes} className="btn-primary text-xs">저장</button>
-                <button onClick={handleCancelNotes} className="btn-secondary text-xs">취소</button>
-              </div>
-            </div>
-          ) : project.notes ? (
-            <p className="text-sm text-ink-secondary whitespace-pre-wrap leading-relaxed">{project.notes}</p>
-          ) : (
-            <p className="text-sm text-ink-faint italic">메모가 없습니다. 편집을 눌러 작성하세요.</p>
-          )}
-        </div>
 
         {/* 세션 목록 */}
         <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card">
