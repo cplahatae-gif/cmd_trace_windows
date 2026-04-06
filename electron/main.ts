@@ -680,11 +680,9 @@ const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
 } else {
-  if (isDev) {
-    // dev 모드: electron.exe + main.js 절대 경로로 레지스트리 등록
-    const mainScript = path.resolve(__dirname, 'main.js')
-    app.setAsDefaultProtocolClient('cmdtrace', process.execPath, [mainScript])
-  } else {
+  // dev 모드: setAsDefaultProtocolClient가 Electron에서 URL을 모듈로 해석하는 문제 있음
+  // → scripts/register-protocol.ps1 로 배치 래퍼를 레지스트리에 직접 등록
+  if (!isDev) {
     app.setAsDefaultProtocolClient('cmdtrace')
   }
 
