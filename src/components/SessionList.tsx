@@ -28,9 +28,9 @@ export default function SessionList({
   const grouped = useMemo(() => groupByDate(sessions), [sessions])
 
   return (
-    <div className="w-80 flex flex-col border-r border-[rgba(0,0,0,0.08)] bg-surface-soft shrink-0">
+    <div className="w-80 flex flex-col border-r border-border bg-surface-soft shrink-0">
       {/* 검색 헤더 */}
-      <div className="px-4 py-3 border-b border-[rgba(0,0,0,0.07)] space-y-2.5">
+      <div className="px-4 py-3 border-b border-border space-y-2.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-ink-primary">세션 목록</span>
           <span className="text-xs text-ink-muted">({sessions.length})</span>
@@ -52,7 +52,7 @@ export default function SessionList({
             placeholder="검색..."
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-white border border-[rgba(0,0,0,0.1)] rounded-lg text-sm text-ink-primary placeholder-ink-muted focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all"
+            className="w-full pl-9 pr-3 py-2 bg-surface-base border border-border rounded-lg text-sm text-ink-primary placeholder-ink-muted focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all"
           />
         </div>
       </div>
@@ -129,10 +129,10 @@ function SessionItem({
   return (
     <button
       onClick={onSelect}
-      className={`w-full text-left px-4 py-3 border-b border-[rgba(0,0,0,0.05)] transition-colors group relative ${
+      className={`w-full text-left px-4 py-3 border-b border-border transition-colors group relative ${
         isSelected
           ? 'bg-brand-50 border-l-2 border-l-brand-500'
-          : 'bg-surface-soft hover:bg-white'
+          : 'bg-surface-soft hover:bg-surface-base'
       }`}
     >
       {showDeleteConfirm ? (
@@ -147,7 +147,7 @@ function SessionItem({
             </button>
             <button
               onClick={handleCancelDelete}
-              className="px-2.5 py-1 bg-surface-subtle hover:bg-surface-soft text-ink-secondary text-xs rounded-lg border border-[rgba(0,0,0,0.08)]"
+              className="px-2.5 py-1 bg-surface-subtle hover:bg-surface-soft text-ink-secondary text-xs rounded-lg border border-border"
             >
               취소
             </button>

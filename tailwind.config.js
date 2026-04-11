@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -20,21 +21,24 @@ export default {
           800: '#312e99',
           900: '#24237a',
         },
-        // 배경 레이어 (라이트 테마)
+        // 배경 레이어 (CSS 변수 — 다크/라이트 자동 전환)
         surface: {
-          base:   '#ffffff',
-          soft:   '#f5f6f8',
-          subtle: '#eef0f3',
+          base:   'var(--surface-base)',
+          soft:   'var(--surface-soft)',
+          subtle: 'var(--surface-subtle)',
         },
         // 텍스트 계층
         ink: {
-          primary:   '#1a1d23',
-          secondary: '#6b7280',
-          muted:     '#9ca3af',
-          faint:     '#c4cad3',
+          primary:   'var(--ink-primary)',
+          secondary: 'var(--ink-secondary)',
+          muted:     'var(--ink-muted)',
+          faint:     'var(--ink-faint)',
         },
         // 보더
-        border: 'rgba(0, 0, 0, 0.08)',
+        border: 'var(--border-color)',
+      },
+      borderColor: {
+        DEFAULT: 'var(--border-color)',
       },
       fontFamily: {
         sans: ['Pretendard', 'Inter', 'Segoe UI', 'system-ui', 'sans-serif'],

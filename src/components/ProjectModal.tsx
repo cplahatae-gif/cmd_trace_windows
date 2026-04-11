@@ -59,7 +59,7 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-modal w-[460px] p-6 max-h-[90vh] overflow-y-auto"
+        className="bg-surface-base rounded-2xl shadow-modal w-[460px] p-6 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-5">
@@ -79,7 +79,7 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
               autoFocus
               value={name}
               onChange={e => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
               placeholder="예: 쇼핑몰 리뉴얼"
             />
           </div>
@@ -91,7 +91,7 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
               value={description}
               onChange={e => setDescription(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 resize-none"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 resize-none"
               placeholder="프로젝트 설명..."
             />
           </div>
@@ -111,8 +111,8 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
                         ? 'bg-green-50 text-green-600 border-green-200'
                         : opt.value === 'completed'
                         ? 'bg-blue-50 text-blue-600 border-blue-200'
-                        : 'bg-surface-subtle text-ink-secondary border-[rgba(0,0,0,0.12)]'
-                      : 'bg-white text-ink-muted border-[rgba(0,0,0,0.08)] hover:bg-surface-soft'
+                        : 'bg-surface-subtle text-ink-secondary border-border'
+                      : 'bg-surface-base text-ink-muted border-border hover:bg-surface-soft'
                   }`}
                 >
                   {opt.label}
@@ -145,7 +145,7 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
               <select
                 value={folderPath}
                 onChange={e => setFolderPath(e.target.value)}
-                className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 bg-white"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 bg-surface-base"
               >
                 <option value="">-- 폴더 선택 안 함 --</option>
                 {folders.map(f => (
@@ -158,7 +158,7 @@ export default function ProjectModal({ project, folders, onSave, onClose }: Prop
               <input
                 value={folderPath}
                 onChange={e => setFolderPath(e.target.value)}
-                className="w-full px-3 py-2 border border-[rgba(0,0,0,0.12)] rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-ink-primary focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
                 placeholder="C:/Users/...폴더 경로..."
               />
             )}

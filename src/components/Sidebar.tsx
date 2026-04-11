@@ -28,7 +28,7 @@ export default function Sidebar({
   ]
 
   return (
-    <div className="w-16 flex flex-col items-center py-3 bg-surface-soft border-r border-[rgba(0,0,0,0.08)] shrink-0">
+    <div className="w-16 flex flex-col items-center py-3 bg-surface-soft border-r border-border shrink-0">
       {navItems.map(({ id, icon: Icon, label, badge }) => (
         <button
           key={id}
@@ -43,7 +43,7 @@ export default function Sidebar({
           <Icon size={20} />
           {badge !== undefined && badge > 0 && (
             <span className={`absolute -top-0.5 -right-0.5 text-[10px] font-bold rounded-full w-4.5 h-4.5 flex items-center justify-center ${
-              activeView === id ? 'bg-white text-brand-600' : 'bg-brand-100 text-brand-600'
+              activeView === id ? 'bg-surface-base text-brand-600' : 'bg-brand-100 text-brand-600'
             }`} style={{ minWidth: '18px', height: '18px', fontSize: '10px' }}>
               {badge > 99 ? '99+' : badge}
             </span>
@@ -54,7 +54,7 @@ export default function Sidebar({
       {/* 태그 필터 */}
       {allTags.length > 0 && (
         <>
-          <div className="w-7 border-t border-[rgba(0,0,0,0.08)] my-2" />
+          <div className="w-7 border-t border-border my-2" />
           <button
             title="태그 필터 전체"
             onClick={() => onTagSelect(null)}

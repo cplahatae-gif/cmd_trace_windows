@@ -22,7 +22,7 @@ export default function InsightsView({ insights }: Props) {
             { label: '출력', value: totalTokenUsage.outputTokens.toLocaleString(), accent: 'text-green-600', bg: 'bg-green-50' },
             { label: '캐시', value: totalTokenUsage.cacheReadInputTokens.toLocaleString(), accent: 'text-amber-600', bg: 'bg-amber-50' },
           ].map(({ label, value, accent, bg }) => (
-            <div key={label} className={`${bg} rounded-xl p-3 border border-[rgba(0,0,0,0.06)]`}>
+            <div key={label} className={`${bg} rounded-xl p-3 border border-border`}>
               <div className={`text-xl font-bold ${accent} leading-tight`}>{value}</div>
               <div className="text-xs text-ink-muted mt-0.5">{label}</div>
             </div>
@@ -38,7 +38,7 @@ export default function InsightsView({ insights }: Props) {
       {/* 툴 사용 통계 */}
       {toolStatistics.length > 0 && (
         <Section title="툴 사용 빈도">
-          <div className="bg-white rounded-xl border border-[rgba(0,0,0,0.08)] p-3" style={{ height: 200 }}>
+          <div className="bg-surface-base rounded-xl border border-border p-3" style={{ height: 200 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={toolStatistics.slice(0, 8)} layout="vertical" margin={{ left: 4, right: 20, top: 4, bottom: 4 }}>
                 <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -46,7 +46,7 @@ export default function InsightsView({ insights }: Props) {
                 <Tooltip
                   contentStyle={{
                     backgroundColor: '#ffffff',
-                    border: '1px solid rgba(0,0,0,0.1)',
+                    border: '1px solid var(--border-color)',
                     borderRadius: 8,
                     fontSize: 12,
                     boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
@@ -69,7 +69,7 @@ export default function InsightsView({ insights }: Props) {
         <Section title="모델별 사용">
           <div className="space-y-2">
             {modelUsage.map(m => (
-              <div key={m.model} className="flex items-center justify-between bg-white rounded-xl px-4 py-3 border border-[rgba(0,0,0,0.08)]">
+              <div key={m.model} className="flex items-center justify-between bg-surface-base rounded-xl px-4 py-3 border border-border">
                 <span className="text-xs font-mono text-ink-primary">{m.model}</span>
                 <div className="flex gap-4 text-[11px] text-ink-muted">
                   <span>{m.messageCount}회</span>

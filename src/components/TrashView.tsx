@@ -30,14 +30,14 @@ export default function TrashView({ sessions, onRestore }: Props) {
             const displayTitle = s.customName || s.preview.slice(0, 80) || s.sessionId
 
             return (
-              <div key={s.id} className="bg-white rounded-xl px-4 py-3 border border-[rgba(0,0,0,0.08)] flex items-center gap-3 group shadow-card">
+              <div key={s.id} className="bg-surface-base rounded-xl px-4 py-3 border border-border flex items-center gap-3 group shadow-card">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-ink-secondary truncate">{displayTitle}</p>
                   <p className="text-[11px] text-ink-muted truncate mt-0.5">{projectName} · {s.messageCount}개 메시지</p>
                 </div>
                 <button
                   onClick={() => onRestore(s.id)}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-ink-muted hover:text-brand-600 hover:bg-brand-50 text-xs font-medium rounded-lg transition-colors opacity-0 group-hover:opacity-100 border border-[rgba(0,0,0,0.08)]"
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-ink-muted hover:text-brand-600 hover:bg-brand-50 text-xs font-medium rounded-lg transition-colors opacity-0 group-hover:opacity-100 border border-border"
                   title="복원"
                 >
                   <RotateCcw size={11} />

@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('obsidian:searchNote', projectName),
   openObsidianNote:   (filePath: string) =>
     ipcRenderer.invoke('obsidian:openNote', filePath),
+  testObsidianConnection: () =>
+    ipcRenderer.invoke('obsidian:testConnection'),
   // 딥링크 수신
   onDeepLink: (callback: (url: string) => void) => {
     ipcRenderer.on('deeplink:navigate', (_event, url: string) => callback(url))

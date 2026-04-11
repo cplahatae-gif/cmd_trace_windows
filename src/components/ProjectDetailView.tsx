@@ -176,7 +176,7 @@ export default function ProjectDetailView({
                     <ProjectStatusBadge status={project.status || 'active'} />
                   </button>
                   {showStatusMenu && (
-                    <div className="absolute left-0 top-full mt-1 w-28 bg-white rounded-xl border border-[rgba(0,0,0,0.1)] shadow-panel z-10 py-1">
+                    <div className="absolute left-0 top-full mt-1 w-28 bg-surface-base rounded-xl border border-border shadow-panel z-10 py-1">
                       {STATUS_OPTIONS.map(opt => (
                         <button
                           key={opt.value}
@@ -227,14 +227,14 @@ export default function ProjectDetailView({
         {/* 통계 + 폴더 정보 */}
         <div className="flex gap-3">
           {stats.map(stat => (
-            <div key={stat.label} className="flex-1 bg-white rounded-xl p-3.5 border border-[rgba(0,0,0,0.08)] shadow-card">
+            <div key={stat.label} className="flex-1 bg-surface-base rounded-xl p-3.5 border border-border shadow-card">
               <div className="text-base mb-1">{stat.icon}</div>
               <div className="text-xl font-bold text-ink-primary leading-none mb-0.5">{stat.value}</div>
               <div className="text-xs text-ink-muted">{stat.label}</div>
             </div>
           ))}
           {projectFolder && (
-            <div className="flex-1 bg-white rounded-xl p-3.5 border border-[rgba(0,0,0,0.08)] shadow-card">
+            <div className="flex-1 bg-surface-base rounded-xl p-3.5 border border-border shadow-card">
               <div className="text-base mb-1">📂</div>
               <div className="text-sm font-semibold text-ink-primary leading-snug truncate">{projectFolder}</div>
               <div className="text-xs text-ink-muted">작업 폴더</div>
@@ -244,7 +244,7 @@ export default function ProjectDetailView({
 
         {/* 프로젝트 요약 — 키워드 + 타임라인 */}
         {(keywords.length > 0 || timeline.length > 0) && (
-          <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card p-5">
+          <div className="bg-surface-base rounded-2xl border border-border shadow-card p-5">
             <h3 className="text-sm font-semibold text-ink-primary mb-3">프로젝트 요약</h3>
 
             {/* 키워드 태그 */}
@@ -267,7 +267,7 @@ export default function ProjectDetailView({
                       <span className="text-[11px] font-semibold text-ink-secondary">{dateKey}</span>
                       <span className="text-[10px] text-ink-faint">({daySessions.length}세션)</span>
                     </div>
-                    <div className="pl-3 border-l-2 border-[rgba(0,0,0,0.06)] space-y-1">
+                    <div className="pl-3 border-l-2 border-border space-y-1">
                       {daySessions.map((s, i) => (
                         <div key={s.id} className="flex items-center gap-2">
                           <span className="text-[10px] text-ink-faint shrink-0">
@@ -293,8 +293,8 @@ export default function ProjectDetailView({
         )}
 
         {/* 세션 목록 */}
-        <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card">
-          <div className="px-4 py-3 border-b border-[rgba(0,0,0,0.06)] flex items-center gap-3">
+        <div className="bg-surface-base rounded-2xl border border-border shadow-card">
+          <div className="px-4 py-3 border-b border-border flex items-center gap-3">
             <span className="text-sm font-semibold text-ink-primary">세션 목록</span>
             <span className="text-xs text-ink-muted">({projectSessions.length}개)</span>
             <div className="ml-auto relative">
@@ -303,12 +303,12 @@ export default function ProjectDetailView({
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="세션 검색..."
-                className="pl-8 pr-3 py-1.5 bg-surface-soft border border-[rgba(0,0,0,0.08)] rounded-lg text-xs text-ink-primary focus:outline-none focus:border-brand-400 w-44"
+                className="pl-8 pr-3 py-1.5 bg-surface-soft border border-border rounded-lg text-xs text-ink-primary focus:outline-none focus:border-brand-400 w-44"
               />
             </div>
           </div>
 
-          <div className="divide-y divide-[rgba(0,0,0,0.05)] max-h-[400px] overflow-y-auto scrollbar-thin">
+          <div className="divide-y divide-border max-h-[400px] overflow-y-auto scrollbar-thin">
             {filteredSessions.length === 0 ? (
               <div className="flex items-center justify-center py-8 text-ink-faint text-sm">
                 {projectSessions.length === 0 ? '세션이 없습니다' : '검색 결과가 없습니다'}
@@ -386,7 +386,7 @@ function SessionRow({
         ) : (
           <button
             onClick={() => setShowRemoveConfirm(true)}
-            className="text-[10px] text-ink-faint hover:text-red-400 px-1.5 py-0.5 rounded border border-[rgba(0,0,0,0.08)] hover:border-red-200 transition-colors"
+            className="text-[10px] text-ink-faint hover:text-red-400 px-1.5 py-0.5 rounded border border-border hover:border-red-200 transition-colors"
           >
             제거
           </button>

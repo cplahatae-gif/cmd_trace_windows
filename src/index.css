@@ -5,6 +5,34 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --surface-base:   #ffffff;
+    --surface-soft:   #f5f6f8;
+    --surface-subtle: #eef0f3;
+    --ink-primary:    #1a1d23;
+    --ink-secondary:  #6b7280;
+    --ink-muted:      #9ca3af;
+    --ink-faint:      #c4cad3;
+    --border-color:   rgba(0, 0, 0, 0.08);
+    --border-strong:  rgba(0, 0, 0, 0.12);
+    --scrollbar:      rgba(0, 0, 0, 0.12);
+    --scrollbar-hover: rgba(0, 0, 0, 0.2);
+  }
+
+  .dark {
+    --surface-base:   #0f1115;
+    --surface-soft:   #16181e;
+    --surface-subtle: #1c1f27;
+    --ink-primary:    #f1f3f7;
+    --ink-secondary:  #b4bac4;
+    --ink-muted:      #7e8593;
+    --ink-faint:      #555c69;
+    --border-color:   rgba(255, 255, 255, 0.08);
+    --border-strong:  rgba(255, 255, 255, 0.14);
+    --scrollbar:      rgba(255, 255, 255, 0.14);
+    --scrollbar-hover: rgba(255, 255, 255, 0.24);
+  }
+
   * {
     box-sizing: border-box;
     margin: 0;
@@ -19,8 +47,8 @@
 
   body {
     font-family: 'Pretendard', 'Inter', 'Segoe UI', system-ui, sans-serif;
-    background-color: #ffffff;
-    color: #1a1d23;
+    background-color: var(--surface-base);
+    color: var(--ink-primary);
     user-select: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -31,7 +59,7 @@
   /* 스크롤바 스타일 — Flex-like 얇고 섬세한 */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: rgba(0,0,0,0.12) transparent;
+    scrollbar-color: var(--scrollbar) transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
     width: 5px;
@@ -40,11 +68,11 @@
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: rgba(0,0,0,0.12);
+    background: var(--scrollbar);
     border-radius: 99px;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: rgba(0,0,0,0.2);
+    background: var(--scrollbar-hover);
   }
 
   /* 드래그 가능한 타이틀바 영역 */
@@ -63,8 +91,8 @@
 
   /* 유리 카드 효과 (Flex 스타일) */
   .card {
-    background: #ffffff;
-    border: 1px solid rgba(0,0,0,0.08);
+    background: var(--surface-base);
+    border: 1px solid var(--border-color);
     border-radius: 10px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   }
@@ -74,6 +102,6 @@
     @apply inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors;
   }
   .btn-secondary {
-    @apply inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-surface-soft hover:bg-surface-subtle text-ink-primary text-xs font-medium rounded-lg border border-[rgba(0,0,0,0.08)] transition-colors;
+    @apply inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-surface-soft hover:bg-surface-subtle text-ink-primary text-xs font-medium rounded-lg border border-border transition-colors;
   }
 }

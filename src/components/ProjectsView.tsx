@@ -83,7 +83,7 @@ export default function ProjectsView({
   return (
     <div className="h-full overflow-hidden flex flex-col bg-surface-soft">
       {/* 헤더 */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(0,0,0,0.06)] bg-white shrink-0">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface-base shrink-0">
         <h2 className="text-lg font-semibold text-ink-primary">프로젝트</h2>
         <button onClick={() => setModal({ mode: 'create' })} className="btn-primary">
           <Plus size={14} />
@@ -107,11 +107,11 @@ export default function ProjectsView({
                 className={`flex-1 flex flex-col rounded-2xl border transition-all min-w-[240px] ${
                   isDropTarget
                     ? 'border-brand-400 ring-2 ring-brand-100 bg-brand-50/30'
-                    : 'border-[rgba(0,0,0,0.08)] bg-white/60'
+                    : 'border-border bg-surface-base/60'
                 }`}
               >
                 {/* 칸반 열 헤더 */}
-                <div className="flex items-center gap-2.5 px-4 py-3 border-b border-[rgba(0,0,0,0.06)] shrink-0">
+                <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border shrink-0">
                   <div className={`w-2.5 h-2.5 rounded-full ${headerColor}`} />
                   <span className="text-sm font-semibold text-ink-primary">{label}</span>
                   <span className="text-xs text-ink-faint bg-surface-subtle px-1.5 py-0.5 rounded-full">{items.length}</span>
@@ -187,8 +187,8 @@ function KanbanCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onSelect}
-      className={`bg-white rounded-xl border border-[rgba(0,0,0,0.08)] p-3 cursor-pointer transition-all group shadow-sm
-        hover:shadow-md hover:border-[rgba(0,0,0,0.14)]
+      className={`bg-surface-base rounded-xl border border-border p-3 cursor-pointer transition-all group shadow-sm
+        hover:shadow-md hover:border-border
         ${isDragging ? 'opacity-40 scale-95' : ''}
       `}
     >

@@ -16,10 +16,30 @@ const META_PATH       = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json')
 const SETTINGS_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-settings.json')
 const PROJECTS_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-projects.json')
 
-// ─── Obsidian 연동 상수 ────────────────────────────────────
-const OBSIDIAN_API_BASE  = 'https://127.0.0.1:27124'
-const OBSIDIAN_API_TOKEN = 'd281ea3d5337e7c72b7a7fb11893081a78bfd1e2ea85b48768ef8269f21084b3'
-const OBSIDIAN_VAULT_NAME = 'Gpters Study 21기 옵시디언 온보딩_v2'
+// ─── Obsidian 연동 — 설정에서 동적 로드 ────────────────────
+interface ObsidianConfig {
+  enabled: boolean
+  apiUrl: string
+  apiToken: string
+  vaultName: string
+}
+
+function loadObsidianConfig(): ObsidianConfig | null {
+  try {
+    if (!fs.existsSync(SETTINGS_PATH)) return null
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'))
+    const o = settings?.obsidian
+    if (!o || !o.enabled || !o.apiUrl || !o.apiToken) return null
+    return {
+      enabled: !!o.enabled,
+      apiUrl: String(o.apiUrl).replace(/\/$/, ''),
+      apiToken: String(o.apiToken),
+      vaultName: String(o.vaultName || ''),
+    }
+  } catch {
+    return null
+  }
+}
 
 // 세션 재개 패널 카운터 (0~3, 2×2 그리드 순환)
 let sessionPaneCount = 0
@@ -70,7 +90,30 @@ function createWindow() {
     })
   }
 
+  // 최소화 시 트레이로 숨김 (트레이가 활성화된 경우)
+  mainWindow.on('minimize', ((e: Electron.Event) => {
+    if (tray && mainWindow) {
+      e.preventDefault()
+      mainWindow.hide()
+    }
+  }) as (...args: unknown[]) => void)
+
   mainWindow.on('closed', () => { mainWindow = null })
+}
+
+// ─── 트레이 아이콘 경로 해석 ───────────────────────────────
+function resolveTrayIconPath(): string {
+  // packaged: process.resourcesPath/Resources/AppIcon.png
+  // dev: <repo>/Resources/AppIcon.png
+  const candidates = [
+    path.join(process.resourcesPath, 'Resources', 'AppIcon.png'),
+    path.join(__dirname, '..', 'Resources', 'AppIcon.png'),
+    path.join(__dirname, '..', '..', 'Resources', 'AppIcon.png'),
+  ]
+  for (const p of candidates) {
+    try { if (fs.existsSync(p)) return p } catch { /* skip */ }
+  }
+  return ''
 }
 
 // ─── IPC: 세션 목록 ────────────────────────────────────────
@@ -254,9 +297,14 @@ ipcMain.handle('projects:load', async () => {
 // ─── IPC: Obsidian 연동 ────────────────────────────────────
 
 /** Obsidian REST API 요청 헬퍼 (자체서명 인증서 허용) */
-function obsidianRequest(method: string, apiPath: string, body?: string): Promise<{ ok: boolean; status: number; data: string }> {
+function obsidianRequest(
+  config: ObsidianConfig,
+  method: string,
+  apiPath: string,
+  body?: string,
+): Promise<{ ok: boolean; status: number; data: string }> {
   return new Promise((resolve) => {
-    const url = new URL(apiPath, OBSIDIAN_API_BASE)
+    const url = new URL(apiPath, config.apiUrl)
     const options = {
       method,
       hostname: url.hostname,
@@ -264,7 +312,7 @@ function obsidianRequest(method: string, apiPath: string, body?: string): Promis
       path: url.pathname + url.search,
       rejectUnauthorized: false,
       headers: {
-        'Authorization': `Bearer ${OBSIDIAN_API_TOKEN}`,
+        'Authorization': `Bearer ${config.apiToken}`,
         ...(body ? { 'Content-Type': 'application/json' } : {}),
       },
     }
@@ -281,9 +329,14 @@ function obsidianRequest(method: string, apiPath: string, body?: string): Promis
 }
 
 ipcMain.handle('obsidian:searchNote', async (_event, projectName: string) => {
+  const config = loadObsidianConfig()
+  if (!config) {
+    return { found: false, error: 'Obsidian 연동이 설정되지 않았습니다. 설정에서 연결 정보를 입력하세요.' }
+  }
+
   /** 검색어로 74. Projects 폴더 내 노트 찾기 */
   async function searchInProjects(query: string): Promise<string | null> {
-    const res = await obsidianRequest('POST', `/search/simple/?query=${encodeURIComponent(query)}`)
+    const res = await obsidianRequest(config!, 'POST', `/search/simple/?query=${encodeURIComponent(query)}`)
     if (!res.ok) return null
     const results: { filename: string; score: number }[] = JSON.parse(res.data)
     if (!Array.isArray(results) || results.length === 0) return null
@@ -298,7 +351,6 @@ ipcMain.handle('obsidian:searchNote', async (_event, projectName: string) => {
     // 2차: 실패 시 프로젝트명에서 주요 단어 추출하여 재시도 (영문 우선)
     if (!found) {
       const words = projectName.split(/[\s\-_]+/).filter(w => w.length > 2)
-      // 영문 키워드를 먼저 시도 (프로젝트 고유명이 영문인 경우가 많음)
       const sorted = [...words].sort((a, b) => {
         const aEng = /^[a-zA-Z]/.test(a) ? 0 : 1
         const bEng = /^[a-zA-Z]/.test(b) ? 0 : 1
@@ -312,8 +364,7 @@ ipcMain.handle('obsidian:searchNote', async (_event, projectName: string) => {
 
     if (found) return { found: true, path: found }
 
-    // 연결 확인 (검색은 됐는데 결과가 없는 건지, 연결 자체가 안 되는지)
-    const ping = await obsidianRequest('GET', '/')
+    const ping = await obsidianRequest(config, 'GET', '/')
     if (!ping.ok) return { found: false, error: 'Obsidian 연결 실패. Obsidian이 실행 중인지 확인하세요.' }
 
     return { found: false, error: `"${projectName}" 관련 프로젝트 노트를 찾을 수 없습니다.` }
@@ -324,13 +375,39 @@ ipcMain.handle('obsidian:searchNote', async (_event, projectName: string) => {
 })
 
 ipcMain.handle('obsidian:openNote', async (_event, filePath: string) => {
+  const config = loadObsidianConfig()
+  if (!config || !config.vaultName) {
+    return { success: false, error: 'Obsidian 볼트 이름이 설정되지 않았습니다.' }
+  }
   try {
-    const uri = `obsidian://open?vault=${encodeURIComponent(OBSIDIAN_VAULT_NAME)}&file=${encodeURIComponent(filePath)}`
+    const uri = `obsidian://open?vault=${encodeURIComponent(config.vaultName)}&file=${encodeURIComponent(filePath)}`
     await shell.openExternal(uri)
     return { success: true }
   } catch (err) {
     console.error('Obsidian 노트 열기 실패:', err)
     return { success: false, error: 'Obsidian 노트를 열 수 없습니다.' }
+  }
+})
+
+ipcMain.handle('obsidian:testConnection', async () => {
+  const config = loadObsidianConfig()
+  if (!config) {
+    return { ok: false, error: '설정이 비어 있거나 연동이 비활성화 상태입니다.' }
+  }
+  try {
+    const res = await obsidianRequest(config, 'GET', '/')
+    if (!res.ok) {
+      return { ok: false, error: `연결 실패 (status ${res.status}). API 키 또는 URL을 확인하세요.` }
+    }
+    let vault: string | undefined
+    try {
+      const parsed = JSON.parse(res.data)
+      vault = parsed?.manifest?.id || parsed?.service
+    } catch { /* ignore */ }
+    return { ok: true, vault }
+  } catch (err) {
+    console.error('Obsidian 연결 테스트 실패:', err)
+    return { ok: false, error: 'Obsidian REST API에 도달할 수 없습니다. Obsidian 실행 여부를 확인하세요.' }
   }
 })
 
@@ -708,16 +785,26 @@ app.whenReady().then(() => {
 
   // Tray 아이콘 초기화
   try {
-    const icon = nativeImage.createEmpty()
+    const iconPath = resolveTrayIconPath()
+    const icon = iconPath
+      ? nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+      : nativeImage.createEmpty()
     tray = new Tray(icon)
     const contextMenu = Menu.buildFromTemplate([
       { label: 'CmdTrace 열기', click: () => { mainWindow?.show(); mainWindow?.focus() } },
       { type: 'separator' },
-      { label: '종료', click: () => app.quit() },
+      { label: '종료', click: () => { tray?.destroy(); app.quit() } },
     ])
     tray.setToolTip('CmdTrace')
     tray.setContextMenu(contextMenu)
-    tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus() })
+    const restoreWindow = () => {
+      if (!mainWindow) return
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+    tray.on('click', restoreWindow)
+    tray.on('double-click', restoreWindow)
   } catch (err) {
     console.error('Tray 초기화 실패:', err)
   }

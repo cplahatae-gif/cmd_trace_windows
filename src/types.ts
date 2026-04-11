@@ -79,14 +79,22 @@ export interface SessionInsights {
 // ─── 설정 ────────────────────────────────────────────────
 export type AgentType = 'claude' | 'opencode'
 export type TerminalType = 'wt' | 'powershell' | 'cmd'
-export type ThemeType = 'dark' | 'light'
+export type ThemeType = 'light' | 'dark' | 'system'
 export type ExportFormat = 'md' | 'json' | 'html'
+
+export interface ObsidianSettings {
+  enabled: boolean
+  apiUrl: string
+  apiToken: string
+  vaultName: string
+}
 
 export interface AppSettings {
   terminal: TerminalType
   theme: ThemeType
   bypassPermissions: boolean
   agentType: AgentType
+  obsidian?: ObsidianSettings
 }
 
 // ─── Electron API 타입 ────────────────────────────────────
@@ -109,6 +117,7 @@ declare global {
       // Obsidian 연동
       searchObsidianNote: (projectName: string) => Promise<{ found: boolean; path?: string; error?: string }>
       openObsidianNote: (filePath: string) => Promise<{ success: boolean; error?: string }>
+      testObsidianConnection: () => Promise<{ ok: boolean; error?: string; vault?: string }>
       // 딥링크
       onDeepLink: (callback: (url: string) => void) => void
     }

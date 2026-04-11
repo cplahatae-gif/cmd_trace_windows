@@ -59,7 +59,7 @@ export default function Dashboard({ sessions }: { sessions: Session[] }) {
         {/* 통계 카드 */}
         <div className="grid grid-cols-4 gap-3">
           {stats.map(stat => (
-            <div key={stat.label} className="bg-white rounded-xl p-4 border border-[rgba(0,0,0,0.08)] shadow-card">
+            <div key={stat.label} className="bg-surface-base rounded-xl p-4 border border-border shadow-card">
               <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-base mb-2.5 ${stat.color}`}>
                 {stat.icon}
               </div>
@@ -86,7 +86,7 @@ export default function Dashboard({ sessions }: { sessions: Session[] }) {
         )}
 
         {/* 30일 활동 차트 */}
-        <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card p-5">
+        <div className="bg-surface-base rounded-2xl border border-border shadow-card p-5">
           <h3 className="text-sm font-semibold text-ink-primary mb-4">최근 30일 활동</h3>
           {sessions.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-ink-faint text-sm">데이터 없음</div>
@@ -109,13 +109,13 @@ export default function Dashboard({ sessions }: { sessions: Session[] }) {
                 />
                 <Tooltip
                   contentStyle={{
-                    background: '#fff',
-                    border: '1px solid rgba(0,0,0,0.1)',
+                    background: 'var(--surface-base)',
+                    border: '1px solid var(--border-color)',
                     borderRadius: '10px',
                     fontSize: '12px',
                     boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
                   }}
-                  labelStyle={{ color: '#374151', fontWeight: 600 }}
+                  labelStyle={{ color: 'var(--ink-secondary)', fontWeight: 600 }}
                   formatter={(value: number) => [`${value}개`, '세션']}
                 />
                 <Bar dataKey="count" fill="#635bff" radius={[3, 3, 0, 0]} />
@@ -126,7 +126,7 @@ export default function Dashboard({ sessions }: { sessions: Session[] }) {
 
         {/* 프로젝트별 분포 */}
         {projectData.length > 0 && (
-          <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] shadow-card p-5">
+          <div className="bg-surface-base rounded-2xl border border-border shadow-card p-5">
             <h3 className="text-sm font-semibold text-ink-primary mb-4">프로젝트별 세션 분포</h3>
             <div className="flex items-center gap-6">
               <ResponsiveContainer width={140} height={140}>
@@ -147,8 +147,8 @@ export default function Dashboard({ sessions }: { sessions: Session[] }) {
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      background: '#fff',
-                      border: '1px solid rgba(0,0,0,0.1)',
+                      background: 'var(--surface-base)',
+                      border: '1px solid var(--border-color)',
                       borderRadius: '10px',
                       fontSize: '12px',
                       boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
@@ -175,7 +175,7 @@ export default function Dashboard({ sessions }: { sessions: Session[] }) {
           <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-widest mb-3">최근 활동 세션</h3>
           <div className="space-y-1.5">
             {sessions.slice(0, 8).map(s => (
-              <div key={s.id} className="bg-white rounded-xl px-4 py-3 border border-[rgba(0,0,0,0.08)] flex items-center gap-3">
+              <div key={s.id} className="bg-surface-base rounded-xl px-4 py-3 border border-border flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-ink-primary truncate">{s.customName || s.preview}</p>
                   <p className="text-xs text-ink-muted truncate mt-0.5">{s.project.split(/[\\/]/).pop()}</p>

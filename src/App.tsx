@@ -15,9 +15,15 @@ import { ko } from 'date-fns/locale'
 
 const DEFAULT_SETTINGS: AppSettings = {
   terminal: 'wt',
-  theme: 'dark',
+  theme: 'light',
   bypassPermissions: false,
   agentType: 'claude',
+  obsidian: {
+    enabled: false,
+    apiUrl: 'https://127.0.0.1:27124',
+    apiToken: '',
+    vaultName: '',
+  },
 }
 
 type ActiveView = 'sessions' | 'dashboard' | 'projects' | 'settings' | 'trash'
@@ -35,6 +41,21 @@ export default function App() {
   const [metadata, setMetadata] = useState<Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string }>>({})
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+
+  // 테마 적용 — settings.theme 변경 시 .dark 클래스 토글
+  useEffect(() => {
+    const apply = (isDark: boolean) => {
+      document.documentElement.classList.toggle('dark', isDark)
+    }
+    if (settings.theme === 'system') {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)')
+      apply(mq.matches)
+      const handler = (e: MediaQueryListEvent) => apply(e.matches)
+      mq.addEventListener('change', handler)
+      return () => mq.removeEventListener('change', handler)
+    }
+    apply(settings.theme === 'dark')
+  }, [settings.theme])
 
   // H-1: 앱 시작 시 설정 + 프로젝트 불러오기
   useEffect(() => {
@@ -317,7 +338,7 @@ export default function App() {
   )
 
   return (
-    <div className="flex flex-col h-screen bg-white text-ink-primary">
+    <div className="flex flex-col h-screen bg-surface-base text-ink-primary">
       <TitleBar />
 
       {/* 에러 배너 */}
@@ -412,7 +433,7 @@ export default function App() {
 function EmptyState({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center h-full text-ink-muted gap-4 bg-surface-soft">
-      <div className="w-16 h-16 rounded-2xl bg-white border border-[rgba(0,0,0,0.08)] shadow-card flex items-center justify-center text-3xl">
+      <div className="w-16 h-16 rounded-2xl bg-surface-base border border-border shadow-card flex items-center justify-center text-3xl">
         💬
       </div>
       <p className="text-base font-semibold text-ink-secondary">세션을 선택하세요</p>

@@ -177,9 +177,9 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
   }
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-surface-base">
       {/* 헤더 */}
-      <div className="px-5 py-3 border-b border-[rgba(0,0,0,0.08)] bg-white shrink-0">
+      <div className="px-5 py-3 border-b border-border bg-surface-base shrink-0">
         {/* 타이틀 */}
         <div className="flex items-start gap-2 mb-2">
           {isEditingName ? (
@@ -189,7 +189,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); if (e.key === 'Escape') setIsEditingName(false) }}
-                className="flex-1 px-2.5 py-1 bg-white border border-brand-400 rounded-lg text-sm text-ink-primary focus:outline-none focus:ring-2 focus:ring-brand-100 selectable"
+                className="flex-1 px-2.5 py-1 bg-surface-base border border-brand-400 rounded-lg text-sm text-ink-primary focus:outline-none focus:ring-2 focus:ring-brand-100 selectable"
                 placeholder="세션 이름 입력..."
               />
               <button onClick={handleSaveName} className="text-green-500 hover:text-green-600 p-1">
@@ -292,7 +292,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
           {(projects !== undefined) && (
             <div className="relative">
               {assignedProject ? (
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[rgba(0,0,0,0.1)] bg-white text-xs text-ink-secondary">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-surface-base text-xs text-ink-secondary">
                   <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: assignedProject.color }} />
                   <span className="max-w-[80px] truncate">{assignedProject.name}</span>
                   <button
@@ -315,7 +315,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
                 </button>
               )}
               {showProjectMenu && (
-                <div className="absolute left-0 top-full mt-1 w-52 bg-white rounded-xl border border-[rgba(0,0,0,0.1)] shadow-panel z-20 py-1 max-h-64 overflow-y-auto">
+                <div className="absolute left-0 top-full mt-1 w-52 bg-surface-base rounded-xl border border-border shadow-panel z-20 py-1 max-h-64 overflow-y-auto">
                   {projects.filter(p => p.id !== session.projectId).length > 0 && (
                     <>
                       <div className="px-3 py-1.5 text-[10px] font-medium text-ink-faint uppercase tracking-wide">기존 프로젝트에 추가</div>
@@ -329,7 +329,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
                           <span className="truncate">{p.name}</span>
                         </button>
                       ))}
-                      <div className="border-t border-[rgba(0,0,0,0.06)] my-1" />
+                      <div className="border-t border-border my-1" />
                     </>
                   )}
                   <button
@@ -356,7 +356,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
               내보내기
             </button>
             {showExportMenu && (
-              <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-xl border border-[rgba(0,0,0,0.1)] shadow-panel z-10 py-1">
+              <div className="absolute right-0 top-full mt-1 w-36 bg-surface-base rounded-xl border border-border shadow-panel z-10 py-1">
                 {(['md', 'json', 'html'] as ExportFormat[]).map(fmt => (
                   <button
                     key={fmt}
@@ -382,7 +382,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
                 </button>
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="px-2.5 py-1 bg-surface-subtle hover:bg-surface-soft text-ink-secondary text-xs rounded-lg border border-[rgba(0,0,0,0.08)]"
+                  className="px-2.5 py-1 bg-surface-subtle hover:bg-surface-soft text-ink-secondary text-xs rounded-lg border border-border"
                 >
                   취소
                 </button>
@@ -401,7 +401,7 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
       </div>
 
       {/* 탭 */}
-      <div className="flex border-b border-[rgba(0,0,0,0.08)] shrink-0 bg-white px-1">
+      <div className="flex border-b border-border shrink-0 bg-surface-base px-1">
         {([
           { id: 'messages' as const, icon: MessageSquare, label: '대화 내용' },
           { id: 'insights' as const, icon: BarChart2, label: '인사이트' },

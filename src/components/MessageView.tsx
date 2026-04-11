@@ -42,7 +42,7 @@ function MessageBubble({ message }: { message: Message }) {
           ? 'bg-brand-500 text-white'
           : message.isToolUse
             ? 'bg-amber-100 text-amber-700'
-            : 'bg-surface-subtle text-ink-secondary border border-[rgba(0,0,0,0.08)]'
+            : 'bg-surface-subtle text-ink-secondary border border-border'
       }`}>
         {isUser ? 'U' : message.isToolUse ? '⚙' : 'AI'}
       </div>
@@ -53,7 +53,7 @@ function MessageBubble({ message }: { message: Message }) {
           ? 'bg-brand-500 text-white rounded-tr-sm'
           : message.isToolUse
             ? 'bg-amber-50 border border-amber-100 text-ink-primary rounded-tl-sm'
-            : 'bg-white border border-[rgba(0,0,0,0.08)] text-ink-primary rounded-tl-sm shadow-card'
+            : 'bg-surface-base border border-border text-ink-primary rounded-tl-sm shadow-card'
       }`}>
         {/* 라벨 + 시간 */}
         <div className="flex items-center gap-2 mb-1.5">
@@ -73,7 +73,7 @@ function MessageBubble({ message }: { message: Message }) {
         <div className={`prose prose-sm max-w-none ${
           isUser
             ? 'prose-invert'
-            : 'prose-neutral prose-pre:bg-surface-soft prose-pre:border prose-pre:border-[rgba(0,0,0,0.08)] prose-code:text-brand-600 prose-code:bg-brand-50 prose-code:px-1 prose-code:rounded prose-code:text-xs'
+            : 'prose-neutral prose-pre:bg-surface-soft prose-pre:border prose-pre:border-border prose-code:text-brand-600 prose-code:bg-brand-50 prose-code:px-1 prose-code:rounded prose-code:text-xs'
         }`}>
           <ReactMarkdown>{message.content}</ReactMarkdown>
         </div>
