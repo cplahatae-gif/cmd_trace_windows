@@ -272,6 +272,7 @@ export default function App() {
   }, [])
 
   // Obsidian 노트 동기화 헬퍼 (autoSync 켜져 있을 때만, 실패는 조용히 무시)
+  // stale closure 방지: setProjects를 functional form으로 호출해 최신 상태를 기준으로 머지.
   const syncProjectToObsidian = useCallback(async (project: Project) => {
     if (!settings.obsidian?.enabled || !settings.obsidian?.autoSync) return
     if (!window.electronAPI?.upsertObsidianProjectNote) return
@@ -293,18 +294,22 @@ export default function App() {
         recentSessions,
         previousNotePath: project.obsidianNotePath,
       })
-      if (res.ok && res.path && res.path !== project.obsidianNotePath) {
-        // 경로 저장 (다음 동기화 시 이전 위치 정리용)
-        const updated = projects.map(p =>
+      if (!res.ok || !res.path) return
+      // 경로 저장 (다음 동기화 시 이전 위치 정리용) — 최신 projects 상태 위에 머지
+      setProjects(prev => {
+        const current = prev.find(p => p.id === project.id)
+        if (!current) return prev // 삭제된 프로젝트면 무시
+        if (current.obsidianNotePath === res.path) return prev // 이미 동일하면 재저장 X
+        const next = prev.map(p =>
           p.id === project.id ? { ...p, obsidianNotePath: res.path } : p
         )
-        setProjects(updated)
-        if (window.electronAPI) window.electronAPI.saveProjects(updated)
-      }
+        window.electronAPI?.saveProjects(next)
+        return next
+      })
     } catch (err) {
       console.warn('Obsidian 동기화 실패 (무시):', err)
     }
-  }, [settings.obsidian, activeSessions, projects])
+  }, [settings.obsidian, activeSessions])
 
   const createProject = async (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'sessionIds'>) => {
     const now = new Date().toISOString()

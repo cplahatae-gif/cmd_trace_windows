@@ -305,6 +305,9 @@ function obsidianRequest(
 ): Promise<{ ok: boolean; status: number; data: string }> {
   return new Promise((resolve) => {
     const url = new URL(apiPath, config.apiUrl)
+    // /vault/{path} PUT은 마크다운 본문, 나머지(/search 등)는 JSON
+    const isVaultWrite = method === 'PUT' && url.pathname.startsWith('/vault/')
+    const bodyBuf = body ? Buffer.from(body, 'utf-8') : undefined
     const options = {
       method,
       hostname: url.hostname,
@@ -313,17 +316,23 @@ function obsidianRequest(
       rejectUnauthorized: false,
       headers: {
         'Authorization': `Bearer ${config.apiToken}`,
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(bodyBuf ? {
+          'Content-Type': isVaultWrite ? 'text/markdown; charset=utf-8' : 'application/json',
+          'Content-Length': bodyBuf.length,
+        } : {}),
       },
     }
 
     const req = https.request(options, (res) => {
       let data = ''
       res.on('data', (chunk: Buffer) => { data += chunk.toString() })
-      res.on('end', () => resolve({ ok: res.statusCode === 200, status: res.statusCode || 0, data }))
+      res.on('end', () => {
+        const status = res.statusCode || 0
+        resolve({ ok: status >= 200 && status < 300, status, data })
+      })
     })
     req.on('error', () => resolve({ ok: false, status: 0, data: '' }))
-    if (body) req.write(body)
+    if (bodyBuf) req.write(bodyBuf)
     req.end()
   })
 }
@@ -417,10 +426,17 @@ ipcMain.handle('obsidian:testConnection', async () => {
 // 사용자가 쓴 본문·프론트매터의 다른 필드는 절대 건드리지 않음.
 
 const OBSIDIAN_BASE_DIR = '70. Outputs/74. Projects'
+// 실제 볼트 폴더 구조: inProgress/ · completed/ · archived/
 const STATUS_FOLDER: Record<string, string> = {
   active:    'inProgress',
-  completed: 'done',
-  archived:  'archive',
+  completed: 'completed',
+  archived:  'archived',
+}
+// Project Notes 뷰가 필터링에 쓰는 status 값 (폴더명과 동일)
+const STATUS_VAULT_LABEL: Record<string, string> = {
+  active:    'inProgress',
+  completed: 'completed',
+  archived:  'archived',
 }
 const SESSION_MARK_START = '<!-- cmdtrace:sessions:start -->'
 const SESSION_MARK_END   = '<!-- cmdtrace:sessions:end -->'
@@ -442,41 +458,89 @@ function obsidianNotePath(projectName: string, status: UpsertPayload['status']):
 }
 
 function buildFrontmatter(existing: string | null, payload: UpsertPayload): string {
-  // 기존 frontmatter 파싱 (있다면) → cmdtrace_* 필드만 덮어쓰기
+  // 볼트의 Project Notes 뷰 호환 frontmatter 생성/업데이트.
+  // - 신규: type/CMDS/index/tags 등 볼트 필수 필드를 모두 넣음
+  // - 기존: 사용자 편집 필드는 보존, 동기화 관리 필드만 덮어쓰기 (+ 누락된 필수 필드 append)
   const now = new Date().toISOString()
+  const today = now.slice(0, 10) // YYYY-MM-DD
+  const vaultStatus = STATUS_VAULT_LABEL[payload.status] || 'inProgress'
+
+  // 매 sync마다 덮어쓰는 관리 필드 (스칼라만)
   const managed: Record<string, string> = {
-    cmdtrace_id:       payload.id,
-    cmdtrace_url:      `cmdtrace://project/${payload.id}`,
-    cmdtrace_status:   payload.status,
-    session_count:     String(payload.sessionCount),
-    last_synced:       now,
+    'cmdtrace_id':     payload.id,
+    'cmdtrace_url':    `cmdtrace://project/${payload.id}`,
+    'cmdtrace_status': payload.status,
+    'session_count':   String(payload.sessionCount),
+    'last_synced':     now,
+    'status':          vaultStatus,
+    'date modified':   today,
   }
 
   if (!existing) {
+    // 신규 노트: Project Notes 뷰가 요구하는 필드를 모두 포함
     const lines = ['---']
-    for (const [k, v] of Object.entries(managed)) lines.push(`${k}: ${v}`)
-    if (payload.description) lines.push(`description: ${JSON.stringify(payload.description)}`)
+    lines.push('type: project')
+    lines.push(`cmdtrace_id: ${managed.cmdtrace_id}`)
+    lines.push(`cmdtrace_url: ${managed.cmdtrace_url}`)
+    lines.push(`cmdtrace_status: ${managed.cmdtrace_status}`)
+    lines.push('CMDS: "[[📚 830 Projects]]"')
+    lines.push('index: "[[🏷 Project Notes]]"')
+    if (payload.description) {
+      lines.push(`description: ${JSON.stringify(payload.description)}`)
+    }
+    lines.push(`status: ${managed.status}`)
+    lines.push(`session_count: ${managed.session_count}`)
+    lines.push(`date created: ${today}`)
+    lines.push(`date modified: ${managed['date modified']}`)
+    lines.push(`last_synced: ${managed.last_synced}`)
+    lines.push('tags:')
+    lines.push('  - project')
     lines.push('---')
     return lines.join('\n')
   }
 
-  // 기존 frontmatter: cmdtrace_* 키만 업데이트, 나머지는 유지
+  // 기존 노트: 관리 필드만 업데이트, 나머지는 그대로 유지
   const body = existing.replace(/^---\n|\n---$/g, '')
-  const entries = body.split('\n')
-  const seen = new Set<string>()
+  const lines = body.split('\n')
   const out: string[] = []
-  for (const line of entries) {
-    const m = line.match(/^([\w-]+):/)
-    if (m && managed[m[1]] !== undefined) {
-      out.push(`${m[1]}: ${managed[m[1]]}`)
-      seen.add(m[1])
+  const seen = new Set<string>()
+  let inMultilineValue = false
+
+  for (const line of lines) {
+    // 들여쓴 라인(리스트 항목 등)은 그대로 유지
+    if (/^\s/.test(line)) {
+      out.push(line)
+      continue
+    }
+    inMultilineValue = false
+    // 키 추출 — 키에 공백 허용 ("date modified")
+    const m = line.match(/^([\w][\w -]*?):\s*(.*)$/)
+    if (!m) {
+      out.push(line)
+      continue
+    }
+    const key = m[1]
+    const value = m[2]
+    if (managed[key] !== undefined) {
+      out.push(`${key}: ${managed[key]}`)
+      seen.add(key)
     } else {
       out.push(line)
+      // 값이 비어있으면 뒤따르는 리스트/블록 항목을 보존하기 위한 마커
+      if (value === '') inMultilineValue = true
     }
+    void inMultilineValue
   }
+
+  // 누락된 관리 필드 추가 (기존 노트에 cmdtrace_* 가 아직 없는 경우 최초 동기화)
   for (const [k, v] of Object.entries(managed)) {
     if (!seen.has(k)) out.push(`${k}: ${v}`)
   }
+  // Project Notes 뷰 필수 필드가 누락돼 있으면 추가
+  if (!/^type:/m.test(out.join('\n'))) out.push('type: project')
+  if (!/^CMDS:/m.test(out.join('\n'))) out.push('CMDS: "[[📚 830 Projects]]"')
+  if (!/^index:/m.test(out.join('\n'))) out.push('index: "[[🏷 Project Notes]]"')
+
   return `---\n${out.join('\n')}\n---`
 }
 
@@ -665,7 +729,7 @@ ipcMain.handle('obsidian:upsertProjectNote', async (_event, payload: UpsertPaylo
     // 2. frontmatter + body 분리
     const { frontmatter, body } = existing
       ? splitFrontmatter(existing)
-      : { frontmatter: null, body: `# ${payload.name}\n\n${payload.description || ''}\n` }
+      : { frontmatter: null, body: `# 🔖 ${payload.name}\n\n${payload.description || ''}\n` }
 
     // 3. frontmatter 업데이트 + 마커 섹션 upsert
     const newFrontmatter = buildFrontmatter(frontmatter, payload)
@@ -673,9 +737,9 @@ ipcMain.handle('obsidian:upsertProjectNote', async (_event, payload: UpsertPaylo
     const newBody = upsertMarkerSection(body, section)
     const final = `${newFrontmatter}\n${newBody.startsWith('\n') ? newBody.slice(1) : newBody}`
 
-    // 4. 쓰기 (REST API는 PUT으로 upsert)
+    // 4. 쓰기 (REST API는 PUT으로 upsert, 성공 시 204 No Content)
     const putRes = await obsidianRequest(config, 'PUT', `/vault/${encodeURI(targetPath)}`, final)
-    if (!putRes.ok && putRes.status !== 204) {
+    if (!putRes.ok) {
       return { ok: false, error: `쓰기 실패 (status ${putRes.status})` }
     }
 
