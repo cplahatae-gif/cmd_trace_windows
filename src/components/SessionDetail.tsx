@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download, FolderPlus, ChevronDown } from 'lucide-react'
+import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download, FolderPlus, ChevronDown, ExternalLink } from 'lucide-react'
 import type { Session, Message, SessionInsights, AppSettings, ExportFormat, Project } from '../types'
 import { PROJECT_COLORS } from '../types'
 import MessageView from './MessageView'
@@ -287,6 +287,18 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
           >
             <Pin size={13} fill={session.isPinned ? 'currentColor' : 'none'} />
           </button>
+
+          {/* Obsidian 프로젝트 노트 열기 */}
+          {assignedProject?.obsidianNotePath && (
+            <button
+              onClick={() => window.electronAPI?.openObsidianNote(assignedProject.obsidianNotePath!)}
+              title="이 세션이 속한 프로젝트의 Obsidian 노트 열기"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-purple-600 bg-purple-50 border border-purple-100 rounded-lg hover:bg-purple-100 transition-colors"
+            >
+              <ExternalLink size={12} />
+              Obsidian
+            </button>
+          )}
 
           {/* 프로젝트 등록/배정 */}
           {(projects !== undefined) && (

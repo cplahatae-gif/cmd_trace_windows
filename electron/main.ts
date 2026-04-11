@@ -522,6 +522,130 @@ function upsertMarkerSection(body: string, section: string): string {
   return `${body.trimEnd()}${sep}\n\n${section}\n`
 }
 
+// ─── IPC: 프로젝트 노트 Import 후보 스캔 (Step 2) ─────────
+// 74. Projects/{inProgress|done|archive}/ 아래 .md 파일을 나열하고
+// frontmatter에 cmdtrace_id 가 없는 것을 후보로 반환.
+
+interface ImportCandidate {
+  path: string
+  name: string
+  status: 'active' | 'completed' | 'archived'
+  description?: string
+  hasCmdtraceId: boolean
+}
+
+function parseFrontmatterFields(content: string): Record<string, string> {
+  const m = content.match(/^---\n([\s\S]*?)\n---/)
+  if (!m) return {}
+  const out: Record<string, string> = {}
+  for (const line of m[1].split('\n')) {
+    const kv = line.match(/^([\w-]+):\s*(.*)$/)
+    if (kv) out[kv[1]] = kv[2].trim().replace(/^["']|["']$/g, '')
+  }
+  return out
+}
+
+function folderToStatus(folder: string): 'active' | 'completed' | 'archived' {
+  if (folder === 'done') return 'completed'
+  if (folder === 'archive') return 'archived'
+  return 'active'
+}
+
+function extractNameFromFile(filename: string): string {
+  return filename
+    .replace(/\.md$/i, '')
+    .replace(/^🔖\s*/, '')
+    .trim()
+}
+
+ipcMain.handle('obsidian:scanImportCandidates', async () => {
+  const config = loadObsidianConfig()
+  if (!config) return { ok: false, error: 'Obsidian 연동이 설정되지 않았습니다.' }
+
+  const folders = ['inProgress', 'done', 'archive']
+  const candidates: ImportCandidate[] = []
+
+  try {
+    for (const folder of folders) {
+      const listPath = `/vault/${encodeURI(OBSIDIAN_BASE_DIR + '/' + folder)}/`
+      const listRes = await obsidianRequest(config, 'GET', listPath)
+      if (!listRes.ok) continue
+      let parsed: { files?: string[] }
+      try { parsed = JSON.parse(listRes.data) } catch { continue }
+      const files = Array.isArray(parsed.files) ? parsed.files : []
+
+      for (const file of files) {
+        if (!file.endsWith('.md')) continue
+        const fullPath = `${OBSIDIAN_BASE_DIR}/${folder}/${file}`
+        const readRes = await obsidianRequest(config, 'GET', `/vault/${encodeURI(fullPath)}`)
+        if (!readRes.ok) continue
+
+        const fm = parseFrontmatterFields(readRes.data)
+        const hasId = !!fm.cmdtrace_id
+        candidates.push({
+          path: fullPath,
+          name: extractNameFromFile(file),
+          status: folderToStatus(folder),
+          description: fm.description || undefined,
+          hasCmdtraceId: hasId,
+        })
+      }
+    }
+    return { ok: true, candidates }
+  } catch (err) {
+    console.error('[obsidian:scanImportCandidates] 실패:', err)
+    return { ok: false, error: '볼트 스캔 실패' }
+  }
+})
+
+// 임포트 후 노트의 frontmatter에 cmdtrace_id/url 을 백필 (역방향 링크)
+ipcMain.handle('obsidian:backfillCmdtraceId', async (_event, notePath: string, projectId: string) => {
+  const config = loadObsidianConfig()
+  if (!config) return { ok: false, error: 'not configured' }
+  if (!notePath || !projectId) return { ok: false, error: 'invalid args' }
+  try {
+    const readRes = await obsidianRequest(config, 'GET', `/vault/${encodeURI(notePath)}`)
+    if (!readRes.ok) return { ok: false, error: 'read failed' }
+
+    const { frontmatter, body } = splitFrontmatter(readRes.data)
+    const managed = {
+      cmdtrace_id:  projectId,
+      cmdtrace_url: `cmdtrace://project/${projectId}`,
+    }
+
+    let newFm: string
+    if (!frontmatter) {
+      newFm = `---\ncmdtrace_id: ${managed.cmdtrace_id}\ncmdtrace_url: ${managed.cmdtrace_url}\n---`
+    } else {
+      const inner = frontmatter.replace(/^---\n|\n---$/g, '')
+      const lines = inner.split('\n')
+      const seen = new Set<string>()
+      const out: string[] = []
+      for (const line of lines) {
+        const m = line.match(/^([\w-]+):/)
+        if (m && (managed as Record<string, string>)[m[1]] !== undefined) {
+          out.push(`${m[1]}: ${(managed as Record<string, string>)[m[1]]}`)
+          seen.add(m[1])
+        } else {
+          out.push(line)
+        }
+      }
+      for (const [k, v] of Object.entries(managed)) {
+        if (!seen.has(k)) out.push(`${k}: ${v}`)
+      }
+      newFm = `---\n${out.join('\n')}\n---`
+    }
+
+    const final = `${newFm}\n${body.startsWith('\n') ? body.slice(1) : body}`
+    const putRes = await obsidianRequest(config, 'PUT', `/vault/${encodeURI(notePath)}`, final)
+    if (!putRes.ok && putRes.status !== 204) return { ok: false, error: `write failed ${putRes.status}` }
+    return { ok: true }
+  } catch (err) {
+    console.error('[obsidian:backfillCmdtraceId] 실패:', err)
+    return { ok: false, error: 'backfill failed' }
+  }
+})
+
 ipcMain.handle('obsidian:upsertProjectNote', async (_event, payload: UpsertPayload) => {
   const config = loadObsidianConfig()
   if (!config) {

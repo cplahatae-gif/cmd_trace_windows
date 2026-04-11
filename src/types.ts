@@ -100,6 +100,14 @@ export interface UpsertProjectNotePayload {
   previousNotePath?: string
 }
 
+export interface ObsidianImportCandidate {
+  path: string
+  name: string
+  status: 'active' | 'completed' | 'archived'
+  description?: string
+  hasCmdtraceId: boolean
+}
+
 export interface AppSettings {
   terminal: TerminalType
   theme: ThemeType
@@ -130,6 +138,8 @@ declare global {
       openObsidianNote: (filePath: string) => Promise<{ success: boolean; error?: string }>
       testObsidianConnection: () => Promise<{ ok: boolean; error?: string; vault?: string }>
       upsertObsidianProjectNote: (payload: UpsertProjectNotePayload) => Promise<{ ok: boolean; path?: string; error?: string }>
+      scanObsidianImportCandidates: () => Promise<{ ok: boolean; candidates?: ObsidianImportCandidate[]; error?: string }>
+      backfillObsidianCmdtraceId: (notePath: string, projectId: string) => Promise<{ ok: boolean; error?: string }>
       // 딥링크
       onDeepLink: (callback: (url: string) => void) => void
     }

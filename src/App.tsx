@@ -348,6 +348,35 @@ export default function App() {
     await applyMetaUpdate(sessionId, { projectId: projectId === null ? undefined : projectId })
   }
 
+  // Step 2: Obsidian 노트 임포트 — 새 프로젝트 생성 + 노트에 cmdtrace_id 백필
+  const importProjectsFromObsidian = async (
+    picks: { candidate: { path: string; name: string; status: 'active' | 'completed' | 'archived'; description?: string }; name: string; color: string }[]
+  ) => {
+    if (picks.length === 0) return
+    const now = new Date().toISOString()
+    const newProjects: Project[] = picks.map((p, i) => ({
+      id: `proj_${Date.now()}_${i}`,
+      name: p.name,
+      description: p.candidate.description,
+      color: p.color,
+      status: p.candidate.status,
+      createdAt: now,
+      updatedAt: now,
+      sessionIds: [],
+      obsidianNotePath: p.candidate.path,
+    }))
+    await saveProjects([...projects, ...newProjects])
+
+    // 각 노트에 cmdtrace_id 백필 (병렬, 실패는 무시)
+    if (window.electronAPI?.backfillObsidianCmdtraceId) {
+      await Promise.allSettled(
+        newProjects.map(p =>
+          window.electronAPI.backfillObsidianCmdtraceId(p.obsidianNotePath!, p.id)
+        )
+      )
+    }
+  }
+
   const createProjectFromSession = async (sessionId: string, data: ProjectFormData) => {
     const now = new Date().toISOString()
     const newProject: Project = {
@@ -447,12 +476,14 @@ export default function App() {
               projects={projects}
               sessions={sessionsWithAutoProject}
               folders={uniqueFolders}
+              obsidianEnabled={!!settings.obsidian?.enabled}
               onCreateProject={createProject}
               onUpdateProject={updateProject}
               onDeleteProject={deleteProject}
               onAssignSession={assignSessionToProject}
               onSelectSession={s => { setSelectedSession(s); setActiveView('sessions') }}
               onSelectProject={setSelectedProjectId}
+              onImportFromObsidian={importProjectsFromObsidian}
             />
             )
           ) : activeView === 'trash' ? (

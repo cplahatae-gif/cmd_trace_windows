@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
-import { Plus, Edit2, Trash2, MessageSquare } from 'lucide-react'
-import type { Project, ProjectStatus, Session } from '../types'
+import { Plus, Edit2, Trash2, MessageSquare, Download } from 'lucide-react'
+import type { Project, ProjectStatus, Session, ObsidianImportCandidate } from '../types'
 import ProjectModal from './ProjectModal'
 import type { ProjectFormData } from './ProjectModal'
+import ObsidianImportModal from './ObsidianImportModal'
 import { formatDistanceToNow } from 'date-fns'
 import { ko } from 'date-fns/locale'
 
@@ -10,12 +11,14 @@ interface Props {
   projects: Project[]
   sessions: Session[]
   folders?: string[]
+  obsidianEnabled: boolean
   onCreateProject: (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'sessionIds'>) => void
   onUpdateProject: (id: string, data: Partial<Project>) => void
   onDeleteProject: (id: string) => void
   onAssignSession: (sessionId: string, projectId: string | null) => void
   onSelectSession: (session: Session) => void
   onSelectProject: (projectId: string) => void
+  onImportFromObsidian: (picks: { candidate: ObsidianImportCandidate; name: string; color: string }[]) => Promise<void>
 }
 
 const COLUMNS: { status: ProjectStatus; label: string; emptyLabel: string; headerColor: string }[] = [
@@ -25,14 +28,16 @@ const COLUMNS: { status: ProjectStatus; label: string; emptyLabel: string; heade
 ]
 
 export default function ProjectsView({
-  projects, sessions, folders,
+  projects, sessions, folders, obsidianEnabled,
   onCreateProject, onUpdateProject, onDeleteProject,
   onAssignSession, onSelectSession, onSelectProject,
+  onImportFromObsidian,
 }: Props) {
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; project: Project } | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
   const [dragOverColumn, setDragOverColumn] = useState<ProjectStatus | null>(null)
+  const [showImportModal, setShowImportModal] = useState(false)
 
   const grouped = useMemo(() => ({
     active:    projects.filter(p => (p.status || 'active') === 'active'),
@@ -85,10 +90,22 @@ export default function ProjectsView({
       {/* 헤더 */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface-base shrink-0">
         <h2 className="text-lg font-semibold text-ink-primary">프로젝트</h2>
-        <button onClick={() => setModal({ mode: 'create' })} className="btn-primary">
-          <Plus size={14} />
-          새 프로젝트
-        </button>
+        <div className="flex items-center gap-2">
+          {obsidianEnabled && (
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="btn-secondary"
+              title="Obsidian 볼트의 프로젝트 노트를 스캔해 CmdTrace로 가져옵니다"
+            >
+              <Download size={14} />
+              Obsidian에서 가져오기
+            </button>
+          )}
+          <button onClick={() => setModal({ mode: 'create' })} className="btn-primary">
+            <Plus size={14} />
+            새 프로젝트
+          </button>
+        </div>
       </div>
 
       {/* 칸반 보드 */}
@@ -156,6 +173,14 @@ export default function ProjectsView({
           folders={folders}
           onSave={handleSave}
           onClose={() => setModal(null)}
+        />
+      )}
+
+      {showImportModal && (
+        <ObsidianImportModal
+          existingProjects={projects}
+          onImport={onImportFromObsidian}
+          onClose={() => setShowImportModal(false)}
         />
       )}
     </div>
