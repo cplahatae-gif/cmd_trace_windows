@@ -87,6 +87,17 @@ export interface ObsidianSettings {
   apiUrl: string
   apiToken: string
   vaultName: string
+  autoSync?: boolean  // Step 1: 프로젝트 CRUD 시 Obsidian 노트 자동 upsert
+}
+
+export interface UpsertProjectNotePayload {
+  id: string
+  name: string
+  description?: string
+  status: 'active' | 'completed' | 'archived'
+  sessionCount: number
+  recentSessions: { id: string; title: string; lastActivity: string }[]
+  previousNotePath?: string
 }
 
 export interface AppSettings {
@@ -118,6 +129,7 @@ declare global {
       searchObsidianNote: (projectName: string) => Promise<{ found: boolean; path?: string; error?: string }>
       openObsidianNote: (filePath: string) => Promise<{ success: boolean; error?: string }>
       testObsidianConnection: () => Promise<{ ok: boolean; error?: string; vault?: string }>
+      upsertObsidianProjectNote: (payload: UpsertProjectNotePayload) => Promise<{ ok: boolean; path?: string; error?: string }>
       // 딥링크
       onDeepLink: (callback: (url: string) => void) => void
     }

@@ -271,6 +271,41 @@ export default function App() {
     }
   }, [])
 
+  // Obsidian 노트 동기화 헬퍼 (autoSync 켜져 있을 때만, 실패는 조용히 무시)
+  const syncProjectToObsidian = useCallback(async (project: Project) => {
+    if (!settings.obsidian?.enabled || !settings.obsidian?.autoSync) return
+    if (!window.electronAPI?.upsertObsidianProjectNote) return
+    const projectSessions = activeSessions
+      .filter(s => s.projectId === project.id)
+      .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime())
+    const recentSessions = projectSessions.slice(0, 5).map(s => ({
+      id: s.id,
+      title: s.customName || s.preview.slice(0, 80),
+      lastActivity: s.lastActivity,
+    }))
+    try {
+      const res = await window.electronAPI.upsertObsidianProjectNote({
+        id: project.id,
+        name: project.name,
+        description: project.description,
+        status: project.status,
+        sessionCount: projectSessions.length,
+        recentSessions,
+        previousNotePath: project.obsidianNotePath,
+      })
+      if (res.ok && res.path && res.path !== project.obsidianNotePath) {
+        // 경로 저장 (다음 동기화 시 이전 위치 정리용)
+        const updated = projects.map(p =>
+          p.id === project.id ? { ...p, obsidianNotePath: res.path } : p
+        )
+        setProjects(updated)
+        if (window.electronAPI) window.electronAPI.saveProjects(updated)
+      }
+    } catch (err) {
+      console.warn('Obsidian 동기화 실패 (무시):', err)
+    }
+  }, [settings.obsidian, activeSessions, projects])
+
   const createProject = async (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'sessionIds'>) => {
     const now = new Date().toISOString()
     const newProject: Project = {
@@ -281,12 +316,16 @@ export default function App() {
       sessionIds: [],
     }
     await saveProjects([...projects, newProject])
+    syncProjectToObsidian(newProject)
   }
 
   const updateProject = async (id: string, data: Partial<Project>) => {
-    await saveProjects(projects.map(p =>
+    const updated = projects.map(p =>
       p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p
-    ))
+    )
+    await saveProjects(updated)
+    const target = updated.find(p => p.id === id)
+    if (target) syncProjectToObsidian(target)
   }
 
   const deleteProject = async (id: string) => {
@@ -320,6 +359,7 @@ export default function App() {
     }
     await saveProjects([...projects, newProject])
     await applyMetaUpdate(sessionId, { projectId: newProject.id })
+    syncProjectToObsidian(newProject)
   }
 
   // H-1: 설정 변경 시 저장

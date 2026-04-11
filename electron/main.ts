@@ -411,6 +411,162 @@ ipcMain.handle('obsidian:testConnection', async () => {
   }
 })
 
+// ─── IPC: 프로젝트 노트 Upsert (Step 1) ───────────────────
+// 정책: CmdTrace → Obsidian 단방향 write. frontmatter의 cmdtrace_* 필드와
+// 마커 섹션(<!-- cmdtrace:sessions:start ... end -->)만 관리.
+// 사용자가 쓴 본문·프론트매터의 다른 필드는 절대 건드리지 않음.
+
+const OBSIDIAN_BASE_DIR = '70. Outputs/74. Projects'
+const STATUS_FOLDER: Record<string, string> = {
+  active:    'inProgress',
+  completed: 'done',
+  archived:  'archive',
+}
+const SESSION_MARK_START = '<!-- cmdtrace:sessions:start -->'
+const SESSION_MARK_END   = '<!-- cmdtrace:sessions:end -->'
+
+interface UpsertPayload {
+  id: string
+  name: string
+  description?: string
+  status: 'active' | 'completed' | 'archived'
+  sessionCount: number
+  recentSessions: { id: string; title: string; lastActivity: string }[]
+  previousNotePath?: string  // 이전에 저장된 노트 경로 (이동 감지용)
+}
+
+function obsidianNotePath(projectName: string, status: UpsertPayload['status']): string {
+  const folder = STATUS_FOLDER[status] || 'inProgress'
+  const safeName = projectName.replace(/[\\/:*?"<>|]/g, '_')
+  return `${OBSIDIAN_BASE_DIR}/${folder}/🔖 ${safeName}.md`
+}
+
+function buildFrontmatter(existing: string | null, payload: UpsertPayload): string {
+  // 기존 frontmatter 파싱 (있다면) → cmdtrace_* 필드만 덮어쓰기
+  const now = new Date().toISOString()
+  const managed: Record<string, string> = {
+    cmdtrace_id:       payload.id,
+    cmdtrace_url:      `cmdtrace://project/${payload.id}`,
+    cmdtrace_status:   payload.status,
+    session_count:     String(payload.sessionCount),
+    last_synced:       now,
+  }
+
+  if (!existing) {
+    const lines = ['---']
+    for (const [k, v] of Object.entries(managed)) lines.push(`${k}: ${v}`)
+    if (payload.description) lines.push(`description: ${JSON.stringify(payload.description)}`)
+    lines.push('---')
+    return lines.join('\n')
+  }
+
+  // 기존 frontmatter: cmdtrace_* 키만 업데이트, 나머지는 유지
+  const body = existing.replace(/^---\n|\n---$/g, '')
+  const entries = body.split('\n')
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const line of entries) {
+    const m = line.match(/^([\w-]+):/)
+    if (m && managed[m[1]] !== undefined) {
+      out.push(`${m[1]}: ${managed[m[1]]}`)
+      seen.add(m[1])
+    } else {
+      out.push(line)
+    }
+  }
+  for (const [k, v] of Object.entries(managed)) {
+    if (!seen.has(k)) out.push(`${k}: ${v}`)
+  }
+  return `---\n${out.join('\n')}\n---`
+}
+
+function buildSessionSection(payload: UpsertPayload, vaultName: string): string {
+  const lines: string[] = []
+  lines.push(SESSION_MARK_START)
+  lines.push('## CmdTrace 세션')
+  lines.push('')
+  lines.push(`> 전체 ${payload.sessionCount}개 · [CmdTrace에서 열기](cmdtrace://project/${payload.id})`)
+  lines.push('')
+  if (payload.recentSessions.length === 0) {
+    lines.push('_아직 연결된 세션이 없습니다._')
+  } else {
+    lines.push('**최근 세션**')
+    for (const s of payload.recentSessions.slice(0, 5)) {
+      const when = s.lastActivity ? s.lastActivity.slice(0, 10) : ''
+      const title = s.title.replace(/\n/g, ' ').slice(0, 80)
+      lines.push(`- [${title}](cmdtrace://session/${encodeURIComponent(s.id)}) · ${when}`)
+    }
+  }
+  lines.push('')
+  lines.push(`<sub>이 섹션은 CmdTrace가 자동 관리합니다. 편집 시 다음 동기화 때 덮어써집니다. Vault: ${vaultName || '-'}</sub>`)
+  lines.push(SESSION_MARK_END)
+  return lines.join('\n')
+}
+
+function splitFrontmatter(content: string): { frontmatter: string | null; body: string } {
+  const m = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
+  if (!m) return { frontmatter: null, body: content }
+  return { frontmatter: `---\n${m[1]}\n---`, body: m[2] }
+}
+
+function upsertMarkerSection(body: string, section: string): string {
+  const startIdx = body.indexOf(SESSION_MARK_START)
+  const endIdx   = body.indexOf(SESSION_MARK_END)
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    const before = body.slice(0, startIdx)
+    const after  = body.slice(endIdx + SESSION_MARK_END.length)
+    return `${before}${section}${after}`
+  }
+  // 마커 없음 → 본문 끝에 추가 (사용자 본문은 보존)
+  const sep = body.trim() ? '\n\n' : ''
+  return `${body.trimEnd()}${sep}\n\n${section}\n`
+}
+
+ipcMain.handle('obsidian:upsertProjectNote', async (_event, payload: UpsertPayload) => {
+  const config = loadObsidianConfig()
+  if (!config) {
+    return { ok: false, error: 'Obsidian 연동이 설정되지 않았습니다.' }
+  }
+  if (!payload?.id || !payload?.name) {
+    return { ok: false, error: 'invalid payload' }
+  }
+
+  const targetPath = obsidianNotePath(payload.name, payload.status)
+
+  try {
+    // 1. 기존 노트 읽기 (없으면 신규 생성)
+    const readRes = await obsidianRequest(config, 'GET', `/vault/${encodeURI(targetPath)}`)
+    const existing = readRes.ok ? readRes.data : null
+
+    // 2. frontmatter + body 분리
+    const { frontmatter, body } = existing
+      ? splitFrontmatter(existing)
+      : { frontmatter: null, body: `# ${payload.name}\n\n${payload.description || ''}\n` }
+
+    // 3. frontmatter 업데이트 + 마커 섹션 upsert
+    const newFrontmatter = buildFrontmatter(frontmatter, payload)
+    const section = buildSessionSection(payload, config.vaultName)
+    const newBody = upsertMarkerSection(body, section)
+    const final = `${newFrontmatter}\n${newBody.startsWith('\n') ? newBody.slice(1) : newBody}`
+
+    // 4. 쓰기 (REST API는 PUT으로 upsert)
+    const putRes = await obsidianRequest(config, 'PUT', `/vault/${encodeURI(targetPath)}`, final)
+    if (!putRes.ok && putRes.status !== 204) {
+      return { ok: false, error: `쓰기 실패 (status ${putRes.status})` }
+    }
+
+    // 5. 상태 변경으로 폴더가 바뀌었으면 이전 노트 삭제 (선택, previousNotePath 있을 때만)
+    if (payload.previousNotePath && payload.previousNotePath !== targetPath) {
+      await obsidianRequest(config, 'DELETE', `/vault/${encodeURI(payload.previousNotePath)}`)
+    }
+
+    return { ok: true, path: targetPath }
+  } catch (err) {
+    console.error('[obsidian:upsertProjectNote] 실패:', err)
+    return { ok: false, error: '노트 upsert 실패' }
+  }
+})
+
 // ─── IPC: 세션 내보내기 ────────────────────────────────────
 ipcMain.handle('session:export', async (_event, content: string, format: string, sessionName: string) => {
   const ext = format === 'json' ? 'json' : format === 'html' ? 'html' : 'md'

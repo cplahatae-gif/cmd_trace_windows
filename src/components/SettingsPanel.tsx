@@ -6,6 +6,7 @@ const DEFAULT_OBSIDIAN: ObsidianSettings = {
   apiUrl: 'https://127.0.0.1:27124',
   apiToken: '',
   vaultName: '',
+  autoSync: false,
 }
 
 export default function SettingsPanel({ settings, onSettingsChange }: {
@@ -220,6 +221,27 @@ export default function SettingsPanel({ settings, onSettingsChange }: {
                   {testStatus.kind === 'error' && (
                     <span className="text-xs text-red-600 font-medium">✗ {testStatus.message}</span>
                   )}
+                </div>
+
+                <div className="pt-3 border-t border-border mt-3">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!obsidian.autoSync}
+                      onChange={(e) => updateObsidian({ autoSync: e.target.checked })}
+                      className="accent-brand-500 mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-ink-primary">프로젝트 자동 동기화</p>
+                      <p className="text-[11px] text-ink-muted mt-0.5 leading-relaxed">
+                        프로젝트 생성/수정 시 Obsidian에 노트를 자동 upsert합니다.
+                        <br />
+                        <code className="text-[10px]">70. Outputs/74. Projects/&#123;inProgress|done|archive&#125;/🔖 &#123;이름&#125;.md</code>
+                        <br />
+                        CmdTrace가 관리하는 frontmatter(<code className="text-[10px]">cmdtrace_*</code>)와 <code className="text-[10px]">&lt;!-- cmdtrace:sessions --&gt;</code> 섹션만 갱신 — 사용자 본문은 보존됩니다.
+                      </p>
+                    </div>
+                  </label>
                 </div>
               </div>
             )}
