@@ -170,41 +170,71 @@
 | v2.4.0 | Archive, bulk ops, search highlighting, projects tab | ✅ |
 | v2.4.1 | Codebase modular refactor, tag system enhancement, website overhaul | ✅ |
 
-### Phase 4: Cloud Sync & Automation (v2.5.0) 🔄 Next Up
+### Phase 4: Obsidian Integration (v2.5.0) 🔄 In Progress
+
+CmdTrace와 Obsidian의 역할 분리 및 양방향 연동.
+- **CmdTrace** = 세션 뷰어 + 세션 그룹핑 (현재 작업 현황판)
+- **Obsidian** = 프로젝트 지식 자산 (회고, 교훈, 재활용 가능한 기록)
+
+#### Step 1: 프로젝트 간소화 + 상태 통일
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| Cloud Sync Backend | CloudKit container setup, metadata sync | High |
-| Auto-Tagging | AI-based automatic tag suggestions | Medium |
-| Auto-Summary on Close | Generate summary when session ends | Medium |
-| Smart Search Suggestions | Search autocomplete | Low |
+| Status Unification | `대기 중(pending)` → `완료(completed)`, Obsidian과 일치 | High |
+| Remove goal/notes | CmdTrace에서 제거, Obsidian에 위임 | High |
+| Add obsidianNotePath | 프로젝트에 Obsidian 노트 경로 캐시 필드 추가 | High |
 
-### Phase 5: Ecosystem Integration (v2.6.0+)
-
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Menu Bar App | Quick access widget in menu bar | High |
-| Global Hotkey | System-wide shortcut to open CmdTrace | High |
-| Spotlight Search | System search integration | Medium |
-| Raycast Extension | Quick session search/launch | Medium |
-| Shortcuts App | Siri Shortcuts support | Low |
-
-### Phase 6: Collaboration (v3.0.0)
+#### Step 2: CmdTrace → Obsidian 링크
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| Session Sharing | Generate read-only share links | Medium |
-| Team Workspaces | Shared tag/classification system | Low |
-| Knowledge Base | Team session archive | Low |
+| "Obsidian에서 열기" 버튼 | ProjectDetailView 헤더에 추가, `obsidian://open` 호출 | High |
+| Obsidian REST API IPC | main.ts에 노트 검색/열기 IPC 핸들러 | High |
 
-### Phase 7: Advanced Analytics (v3.1.0)
+#### Step 3: Obsidian → CmdTrace 딥링크
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| Weekly/Monthly Reports | Period-based usage reports | Medium |
-| Git Integration | Link sessions to commits | Medium |
-| Code Impact Analysis | Track AI-written code | Low |
-| Timeline View | Chronological tool usage visualization | Low |
+| Protocol Handler | `cmdtrace://project/{id}` 프로토콜 등록 | Medium |
+| Deep Link Routing | App.tsx에서 딥링크 파싱 → 프로젝트 자동 선택 | Medium |
+| obsidian-project-sync | 노트 생성 시 CmdTrace 딥링크 자동 삽입 | Medium |
+
+#### Step 4: Lessons Learned 자동 기록
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Lesson Learn 섹션 | obsidian-project-sync에 기술적 교훈 + 설계 결정 테이블 추가 | High |
+| 자동 수집 | 대화 컨텍스트에서 "에러→해결" 패턴 감지, git fix: 커밋 파싱 | Medium |
+
+#### Step 5: 프로젝트 완료 시 자동 회고
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Retrospective Mode | `/obsidian-project-sync --retro` — 프로젝트 전체 회고 생성 | High |
+| 회고 섹션 | 요약, 잘한 것, 개선할 것, 재활용 패턴, 기술 스택 평가 | High |
+
+#### Step 6: 크로스 프로젝트 지식 검색 (장기)
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Knowledge Search | Obsidian Dataview로 Lessons Learned 크로스 검색 | Low |
+
+### Phase 5: Windows UX Enhancement (v2.6.0)
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Dark Mode | ThemeType 정의됨, Tailwind CSS 구현 | Medium |
+| System Tray | 트레이 아이콘 에셋 + 최소화 동작 | Medium |
+| Global Hotkey | 시스템 전역 단축키로 CmdTrace 열기 | Low |
+| Auto-Tagging | AI 기반 자동 태그 추천 | Low |
+
+### Phase 6: Advanced Analytics (v3.0.0)
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Weekly/Monthly Reports | 기간별 사용량 리포트 | Medium |
+| Git Integration | 세션-커밋 연결 | Medium |
+| Full-text Index | SQLite FTS 기반 빠른 콘텐츠 검색 | Medium |
 
 ---
 
@@ -213,11 +243,8 @@
 | Feature | Description | Priority |
 |---------|-------------|----------|
 | Session Merge | Combine multiple sessions | Medium |
-| Full-text Index | SQLite FTS for faster content search | Medium |
-| macOS Widgets | Recent sessions widget | Low |
 | VS Code Extension | Sidebar session browsing | Low |
 | Notion Export | Export to Notion database | Low |
-| E2E Encryption | Optional encryption for sync | Low |
 
 ---
 
@@ -225,7 +252,7 @@
 
 | Issue | Description | Workaround |
 |-------|-------------|------------|
-| Cloud Sync | CloudKit container not configured | UI ready, backend v2.5.0 |
+| Vite Build Hang | Rollup 네이티브 바이너리가 한글 경로에서 행업 | `--outDir /c/tmp/...`로 우회 빌드 후 복사 |
 | Large Sessions | Slow loading for 1000+ message sessions | Pagination planned |
 
 ---

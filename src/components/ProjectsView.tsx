@@ -1,217 +1,160 @@
-import { useState } from 'react'
-import { Plus, Edit2, Trash2, MessageSquare, FolderOpen } from 'lucide-react'
-import type { Project, Session } from '../types'
+import { useState, useMemo } from 'react'
+import { Plus, Edit2, Trash2, MessageSquare } from 'lucide-react'
+import type { Project, ProjectStatus, Session } from '../types'
 import ProjectModal from './ProjectModal'
+import type { ProjectFormData } from './ProjectModal'
+import { formatDistanceToNow } from 'date-fns'
+import { ko } from 'date-fns/locale'
 
 interface Props {
   projects: Project[]
   sessions: Session[]
-  onCreateProject: (data: { name: string; description: string; color: string }) => void
-  onUpdateProject: (id: string, data: { name: string; description: string; color: string }) => void
+  folders?: string[]
+  onCreateProject: (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'sessionIds'>) => void
+  onUpdateProject: (id: string, data: Partial<Project>) => void
   onDeleteProject: (id: string) => void
   onAssignSession: (sessionId: string, projectId: string | null) => void
   onSelectSession: (session: Session) => void
+  onSelectProject: (projectId: string) => void
 }
 
+const COLUMNS: { status: ProjectStatus; label: string; emptyLabel: string; headerColor: string }[] = [
+  { status: 'active',    label: '진행 중',   emptyLabel: '진행 중인 프로젝트 없음', headerColor: 'bg-green-500' },
+  { status: 'completed', label: '완료',     emptyLabel: '완료된 프로젝트 없음',    headerColor: 'bg-blue-500' },
+  { status: 'archived',  label: '아카이브',  emptyLabel: '아카이브 없음',          headerColor: 'bg-gray-400' },
+]
+
 export default function ProjectsView({
-  projects,
-  sessions,
-  onCreateProject,
-  onUpdateProject,
-  onDeleteProject,
-  onAssignSession,
-  onSelectSession,
+  projects, sessions, folders,
+  onCreateProject, onUpdateProject, onDeleteProject,
+  onAssignSession, onSelectSession, onSelectProject,
 }: Props) {
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; project: Project } | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
-  const [draggingSession, setDraggingSession] = useState<string | null>(null)
-  const [dragOverProject, setDragOverProject] = useState<string | null>(null)
+  const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
+  const [dragOverColumn, setDragOverColumn] = useState<ProjectStatus | null>(null)
 
-  // 프로젝트에 속한 세션 목록
-  const getProjectSessions = (projectId: string) =>
-    sessions.filter(s => s.projectId === projectId && !s.isDeleted)
+  const grouped = useMemo(() => ({
+    active:    projects.filter(p => (p.status || 'active') === 'active'),
+    completed: projects.filter(p => p.status === 'completed'),
+    archived:  projects.filter(p => p.status === 'archived'),
+  }), [projects])
 
-  // 미분류 세션 (projectId 없음)
-  const unassignedSessions = sessions.filter(s => !s.projectId && !s.isDeleted)
+  const getSessionCount = (projectId: string) =>
+    sessions.filter(s => s.projectId === projectId && !s.isDeleted).length
 
-  const handleDragStart = (sessionId: string) => setDraggingSession(sessionId)
-  const handleDragEnd = () => { setDraggingSession(null); setDragOverProject(null) }
+  const getLastActivity = (projectId: string) => {
+    const ps = sessions.filter(s => s.projectId === projectId && !s.isDeleted)
+    if (ps.length === 0) return null
+    return new Date(Math.max(...ps.map(s => new Date(s.lastActivity).getTime())))
+  }
 
-  const handleDrop = (projectId: string | null) => {
-    if (draggingSession) {
-      onAssignSession(draggingSession, projectId)
+  // 프로젝트 드래그&드롭 (칸반 열 이동)
+  const handleProjectDragStart = (e: React.DragEvent, projectId: string) => {
+    setDraggingProjectId(projectId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  const handleProjectDragEnd = () => {
+    setDraggingProjectId(null)
+    setDragOverColumn(null)
+  }
+  const handleColumnDragOver = (e: React.DragEvent, status: ProjectStatus) => {
+    e.preventDefault()
+    if (draggingProjectId) setDragOverColumn(status)
+  }
+  const handleColumnDragLeave = () => setDragOverColumn(null)
+  const handleColumnDrop = (status: ProjectStatus) => {
+    if (draggingProjectId) {
+      onUpdateProject(draggingProjectId, { status })
     }
-    setDraggingSession(null)
-    setDragOverProject(null)
+    setDraggingProjectId(null)
+    setDragOverColumn(null)
+  }
+
+  const handleSave = (data: ProjectFormData) => {
+    if (modal?.mode === 'edit') {
+      onUpdateProject(modal.project.id, data)
+    } else {
+      onCreateProject(data)
+    }
+    setModal(null)
   }
 
   return (
-    <div className="h-full overflow-y-auto scrollbar-thin px-6 py-5 bg-surface-soft">
-      <div className="max-w-5xl">
-        {/* 헤더 */}
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-ink-primary">프로젝트</h2>
-          <button
-            onClick={() => setModal({ mode: 'create' })}
-            className="btn-primary"
-          >
-            <Plus size={14} />
-            새 프로젝트
-          </button>
-        </div>
+    <div className="h-full overflow-hidden flex flex-col bg-surface-soft">
+      {/* 헤더 */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(0,0,0,0.06)] bg-white shrink-0">
+        <h2 className="text-lg font-semibold text-ink-primary">프로젝트</h2>
+        <button onClick={() => setModal({ mode: 'create' })} className="btn-primary">
+          <Plus size={14} />
+          새 프로젝트
+        </button>
+      </div>
 
-        {projects.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-ink-muted gap-3">
-            <span className="text-5xl">📁</span>
-            <p className="text-base font-medium text-ink-secondary">프로젝트가 없습니다</p>
-            <p className="text-sm">세션을 그룹으로 묶어 관리하려면 프로젝트를 만드세요</p>
-          </div>
-        )}
-
-        {/* 프로젝트 그리드 */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          {projects.map(project => {
-            const pSessions = getProjectSessions(project.id)
-            const isDragTarget = dragOverProject === project.id
+      {/* 칸반 보드 */}
+      <div className="flex-1 overflow-x-auto overflow-y-hidden p-5">
+        <div className="flex gap-4 h-full min-w-[780px]">
+          {COLUMNS.map(({ status, label, emptyLabel, headerColor }) => {
+            const items = grouped[status]
+            const isDropTarget = dragOverColumn === status && draggingProjectId !== null
 
             return (
               <div
-                key={project.id}
-                onDragOver={e => { e.preventDefault(); setDragOverProject(project.id) }}
-                onDragLeave={() => setDragOverProject(null)}
-                onDrop={() => handleDrop(project.id)}
-                className={`bg-white rounded-2xl border shadow-card transition-all ${
-                  isDragTarget
-                    ? 'border-brand-400 ring-2 ring-brand-100'
-                    : 'border-[rgba(0,0,0,0.08)]'
+                key={status}
+                onDragOver={e => handleColumnDragOver(e, status)}
+                onDragLeave={handleColumnDragLeave}
+                onDrop={() => handleColumnDrop(status)}
+                className={`flex-1 flex flex-col rounded-2xl border transition-all min-w-[240px] ${
+                  isDropTarget
+                    ? 'border-brand-400 ring-2 ring-brand-100 bg-brand-50/30'
+                    : 'border-[rgba(0,0,0,0.08)] bg-white/60'
                 }`}
               >
-                {/* 프로젝트 헤더 */}
-                <div className="px-4 py-3 border-b border-[rgba(0,0,0,0.06)] flex items-center gap-2.5">
-                  <div
-                    className="w-3 h-3 rounded-full shrink-0"
-                    style={{ backgroundColor: project.color }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-ink-primary truncate">{project.name}</p>
-                    {project.description && (
-                      <p className="text-xs text-ink-muted truncate">{project.description}</p>
-                    )}
-                  </div>
-                  <span className="text-xs text-ink-muted shrink-0">{pSessions.length}개</span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => setModal({ mode: 'edit', project })}
-                      className="p-1.5 text-ink-faint hover:text-ink-secondary hover:bg-surface-subtle rounded-lg"
-                      title="수정"
-                    >
-                      <Edit2 size={12} />
-                    </button>
-                    {deleteConfirm === project.id ? (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => { onDeleteProject(project.id); setDeleteConfirm(null) }}
-                          className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-md"
-                        >
-                          삭제
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirm(null)}
-                          className="px-2 py-0.5 bg-surface-subtle text-ink-secondary text-xs rounded-md border border-[rgba(0,0,0,0.08)]"
-                        >
-                          취소
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setDeleteConfirm(project.id)}
-                        className="p-1.5 text-ink-faint hover:text-red-400 hover:bg-red-50 rounded-lg"
-                        title="프로젝트 삭제"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </div>
+                {/* 칸반 열 헤더 */}
+                <div className="flex items-center gap-2.5 px-4 py-3 border-b border-[rgba(0,0,0,0.06)] shrink-0">
+                  <div className={`w-2.5 h-2.5 rounded-full ${headerColor}`} />
+                  <span className="text-sm font-semibold text-ink-primary">{label}</span>
+                  <span className="text-xs text-ink-faint bg-surface-subtle px-1.5 py-0.5 rounded-full">{items.length}</span>
                 </div>
 
-                {/* 세션 목록 */}
-                <div className="p-2 space-y-1 min-h-[60px]">
-                  {pSessions.length === 0 ? (
-                    <div className="flex items-center justify-center h-12 text-xs text-ink-faint">
-                      세션을 드래그하여 추가
+                {/* 카드 목록 */}
+                <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-2">
+                  {items.length === 0 ? (
+                    <div className="flex items-center justify-center h-24 text-xs text-ink-faint">
+                      {emptyLabel}
                     </div>
                   ) : (
-                    pSessions.slice(0, 5).map(s => (
-                      <SessionChip
-                        key={s.id}
-                        session={s}
-                        onSelect={() => onSelectSession(s)}
-                        onRemove={() => onAssignSession(s.id, null)}
-                        onDragStart={() => handleDragStart(s.id)}
-                        onDragEnd={handleDragEnd}
+                    items.map(project => (
+                      <KanbanCard
+                        key={project.id}
+                        project={project}
+                        sessionCount={getSessionCount(project.id)}
+                        lastActivity={getLastActivity(project.id)}
+                        isDragging={draggingProjectId === project.id}
+                        deleteConfirm={deleteConfirm}
+                        onSelect={() => onSelectProject(project.id)}
+                        onEdit={e => { e.stopPropagation(); setModal({ mode: 'edit', project }) }}
+                        onDeleteRequest={e => { e.stopPropagation(); setDeleteConfirm(project.id) }}
+                        onDeleteConfirm={e => { e.stopPropagation(); onDeleteProject(project.id); setDeleteConfirm(null) }}
+                        onDeleteCancel={e => { e.stopPropagation(); setDeleteConfirm(null) }}
+                        onDragStart={e => handleProjectDragStart(e, project.id)}
+                        onDragEnd={handleProjectDragEnd}
                       />
                     ))
-                  )}
-                  {pSessions.length > 5 && (
-                    <p className="text-xs text-ink-muted text-center py-1">
-                      +{pSessions.length - 5}개 더
-                    </p>
                   )}
                 </div>
               </div>
             )
           })}
         </div>
-
-        {/* 미분류 세션 */}
-        {unassignedSessions.length > 0 && (
-          <div
-            onDragOver={e => { e.preventDefault(); setDragOverProject('unassigned') }}
-            onDragLeave={() => setDragOverProject(null)}
-            onDrop={() => handleDrop(null)}
-            className={`bg-white rounded-2xl border shadow-card transition-all ${
-              dragOverProject === 'unassigned'
-                ? 'border-brand-400 ring-2 ring-brand-100'
-                : 'border-[rgba(0,0,0,0.08)]'
-            }`}
-          >
-            <div className="px-4 py-3 border-b border-[rgba(0,0,0,0.06)] flex items-center gap-2">
-              <FolderOpen size={14} className="text-ink-muted" />
-              <span className="text-sm font-semibold text-ink-secondary">미분류 세션</span>
-              <span className="text-xs text-ink-muted ml-1">{unassignedSessions.length}개</span>
-            </div>
-            <div className="p-2 grid grid-cols-2 gap-1">
-              {unassignedSessions.slice(0, 10).map(s => (
-                <SessionChip
-                  key={s.id}
-                  session={s}
-                  onSelect={() => onSelectSession(s)}
-                  onDragStart={() => handleDragStart(s.id)}
-                  onDragEnd={handleDragEnd}
-                />
-              ))}
-              {unassignedSessions.length > 10 && (
-                <p className="text-xs text-ink-muted text-center py-1 col-span-2">
-                  +{unassignedSessions.length - 10}개 더 (세션 목록에서 확인)
-                </p>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* 모달 */}
       {modal && (
         <ProjectModal
           project={modal.mode === 'edit' ? modal.project : null}
-          onSave={data => {
-            if (modal.mode === 'edit') {
-              onUpdateProject(modal.project.id, data)
-            } else {
-              onCreateProject(data)
-            }
-            setModal(null)
-          }}
+          folders={folders}
+          onSave={handleSave}
           onClose={() => setModal(null)}
         />
       )}
@@ -219,46 +162,73 @@ export default function ProjectsView({
   )
 }
 
-// ─── 세션 칩 ─────────────────────────────────────────────
-function SessionChip({
-  session,
-  onSelect,
-  onRemove,
-  onDragStart,
-  onDragEnd,
+// ─── 칸반 카드 ─────────────────────────────────────────────
+function KanbanCard({
+  project, sessionCount, lastActivity, isDragging, deleteConfirm,
+  onSelect, onEdit, onDeleteRequest, onDeleteConfirm, onDeleteCancel,
+  onDragStart, onDragEnd,
 }: {
-  session: Session
+  project: Project
+  sessionCount: number
+  lastActivity: Date | null
+  isDragging: boolean
+  deleteConfirm: string | null
   onSelect: () => void
-  onRemove?: () => void
-  onDragStart: () => void
+  onEdit: (e: React.MouseEvent) => void
+  onDeleteRequest: (e: React.MouseEvent) => void
+  onDeleteConfirm: (e: React.MouseEvent) => void
+  onDeleteCancel: (e: React.MouseEvent) => void
+  onDragStart: (e: React.DragEvent) => void
   onDragEnd: () => void
 }) {
-  const title = session.customName || session.preview.slice(0, 40) || session.sessionId
-
   return (
     <div
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-soft hover:bg-surface-subtle border border-[rgba(0,0,0,0.06)] cursor-grab group transition-colors"
+      onClick={onSelect}
+      className={`bg-white rounded-xl border border-[rgba(0,0,0,0.08)] p-3 cursor-pointer transition-all group shadow-sm
+        hover:shadow-md hover:border-[rgba(0,0,0,0.14)]
+        ${isDragging ? 'opacity-40 scale-95' : ''}
+      `}
     >
-      <MessageSquare size={10} className="text-ink-faint shrink-0" />
-      <button
-        onClick={onSelect}
-        className="flex-1 text-xs text-ink-secondary truncate text-left hover:text-ink-primary"
-        title={title}
-      >
-        {title}
-      </button>
-      {onRemove && (
-        <button
-          onClick={e => { e.stopPropagation(); onRemove() }}
-          className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-red-400 transition-all"
-          title="프로젝트에서 제거"
-        >
-          <Trash2 size={10} />
-        </button>
-      )}
+      {/* 이름 + 액션 */}
+      <div className="flex items-start gap-2">
+        <div className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: project.color }} />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-ink-primary truncate">{project.name}</p>
+          {project.description && (
+            <p className="text-xs text-ink-muted truncate mt-0.5">{project.description}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all" onClick={e => e.stopPropagation()}>
+          <button onClick={onEdit} className="p-1 text-ink-faint hover:text-ink-secondary rounded" title="수정">
+            <Edit2 size={11} />
+          </button>
+          {deleteConfirm === project.id ? (
+            <div className="flex items-center gap-0.5">
+              <button onClick={onDeleteConfirm} className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] rounded">삭제</button>
+              <button onClick={onDeleteCancel} className="px-1.5 py-0.5 bg-surface-subtle text-ink-secondary text-[10px] rounded">취소</button>
+            </div>
+          ) : (
+            <button onClick={onDeleteRequest} className="p-1 text-ink-faint hover:text-red-400 rounded" title="삭제">
+              <Trash2 size={11} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 하단 메타 */}
+      <div className="flex items-center gap-2 mt-2 pl-[18px] text-[11px] text-ink-faint">
+        <MessageSquare size={10} />
+        <span>{sessionCount}개 세션</span>
+        {lastActivity && (
+          <>
+            <span>·</span>
+            <span>{formatDistanceToNow(lastActivity, { addSuffix: true, locale: ko })}</span>
+          </>
+        )}
+      </div>
     </div>
   )
 }

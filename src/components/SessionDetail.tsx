@@ -1,19 +1,26 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download } from 'lucide-react'
-import type { Session, Message, SessionInsights, AppSettings, ExportFormat } from '../types'
+import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download, FolderPlus, ChevronDown } from 'lucide-react'
+import type { Session, Message, SessionInsights, AppSettings, ExportFormat, Project } from '../types'
+import { PROJECT_COLORS } from '../types'
 import MessageView from './MessageView'
 import InsightsView from './InsightsView'
+import ProjectModal from './ProjectModal'
+import type { ProjectFormData } from './ProjectModal'
 
 interface Props {
   session: Session
   settings: AppSettings
   onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean }) => Promise<void>
   onDelete: (id: string) => void
+  projects?: Project[]
+  folders?: string[]
+  onAssignSession?: (sessionId: string, projectId: string | null) => void
+  onCreateProjectFromSession?: (sessionId: string, data: ProjectFormData) => void
 }
 
 type Tab = 'messages' | 'insights'
 
-export default function SessionDetail({ session, settings, onUpdateMeta, onDelete }: Props) {
+export default function SessionDetail({ session, settings, onUpdateMeta, onDelete, projects, folders, onAssignSession, onCreateProjectFromSession }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [insights, setInsights] = useState<SessionInsights | null>(null)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
@@ -28,6 +35,8 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
   const [insightError, setInsightError] = useState<string | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showProjectMenu, setShowProjectMenu] = useState(false)
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false)
 
   const loadMessages = useCallback(async () => {
     if (!window.electronAPI) return
@@ -139,6 +148,33 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
 
   const displayTitle = session.customName || session.preview.slice(0, 80) || session.sessionId
   const projectName = session.project.split(/[\\/]/).pop() || session.project
+  const assignedProject = projects?.find(p => p.id === session.projectId)
+
+  const prefillProject: Project = {
+    id: '',
+    name: session.customName || session.preview.slice(0, 50).trim(),
+    description: session.preview.slice(0, 120).trim(),
+    color: PROJECT_COLORS[0],
+    status: 'active',
+    folderPath: session.project,
+    createdAt: '',
+    updatedAt: '',
+    sessionIds: [],
+  }
+
+  const handleCreateProject = (data: ProjectFormData) => {
+    onCreateProjectFromSession?.(session.id, data)
+    setShowNewProjectModal(false)
+  }
+
+  const handleAssignToProject = (projectId: string) => {
+    onAssignSession?.(session.id, projectId)
+    setShowProjectMenu(false)
+  }
+
+  const handleUnassignProject = () => {
+    onAssignSession?.(session.id, null)
+  }
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -252,6 +288,62 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
             <Pin size={13} fill={session.isPinned ? 'currentColor' : 'none'} />
           </button>
 
+          {/* 프로젝트 등록/배정 */}
+          {(projects !== undefined) && (
+            <div className="relative">
+              {assignedProject ? (
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[rgba(0,0,0,0.1)] bg-white text-xs text-ink-secondary">
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: assignedProject.color }} />
+                  <span className="max-w-[80px] truncate">{assignedProject.name}</span>
+                  <button
+                    onClick={handleUnassignProject}
+                    className="text-ink-faint hover:text-ink-secondary ml-0.5"
+                    title="프로젝트에서 제거"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowProjectMenu(v => !v)}
+                  className="btn-secondary"
+                  title="프로젝트에 추가"
+                >
+                  <FolderPlus size={12} />
+                  프로젝트
+                  <ChevronDown size={10} />
+                </button>
+              )}
+              {showProjectMenu && (
+                <div className="absolute left-0 top-full mt-1 w-52 bg-white rounded-xl border border-[rgba(0,0,0,0.1)] shadow-panel z-20 py-1 max-h-64 overflow-y-auto">
+                  {projects.filter(p => p.id !== session.projectId).length > 0 && (
+                    <>
+                      <div className="px-3 py-1.5 text-[10px] font-medium text-ink-faint uppercase tracking-wide">기존 프로젝트에 추가</div>
+                      {projects.filter(p => p.id !== session.projectId).map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => handleAssignToProject(p.id)}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-secondary hover:bg-surface-soft transition-colors"
+                        >
+                          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                          <span className="truncate">{p.name}</span>
+                        </button>
+                      ))}
+                      <div className="border-t border-[rgba(0,0,0,0.06)] my-1" />
+                    </>
+                  )}
+                  <button
+                    onClick={() => { setShowProjectMenu(false); setShowNewProjectModal(true) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-brand-600 font-medium hover:bg-brand-50 transition-colors"
+                  >
+                    <FolderPlus size={12} />
+                    새 프로젝트로 등록
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 내보내기 */}
           <div className="relative">
             <button
@@ -362,6 +454,16 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
           ) : null
         )}
       </div>
+
+      {/* 새 프로젝트 생성 모달 (세션 정보 자동 채움) */}
+      {showNewProjectModal && (
+        <ProjectModal
+          project={prefillProject}
+          folders={folders}
+          onSave={handleCreateProject}
+          onClose={() => setShowNewProjectModal(false)}
+        />
+      )}
     </div>
   )
 }

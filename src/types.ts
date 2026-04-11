@@ -19,12 +19,18 @@ export interface Session {
 }
 
 // ─── 프로젝트 ─────────────────────────────────────────────
+export type ProjectStatus = 'active' | 'completed' | 'archived'
+
 export interface Project {
   id: string
   name: string
   description?: string
   color: string
+  status: ProjectStatus
   createdAt: string
+  updatedAt: string
+  folderPath?: string
+  obsidianNotePath?: string
   sessionIds: string[]
 }
 
@@ -100,6 +106,11 @@ declare global {
       saveProjects: (data: Project[]) => Promise<{ success: boolean }>
       loadProjects: () => Promise<Project[]>
       exportSession: (content: string, format: ExportFormat, sessionName: string) => Promise<{ success: boolean; path?: string }>
+      // Obsidian 연동
+      searchObsidianNote: (projectName: string) => Promise<{ found: boolean; path?: string; error?: string }>
+      openObsidianNote: (filePath: string) => Promise<{ success: boolean; error?: string }>
+      // 딥링크
+      onDeepLink: (callback: (url: string) => void) => void
     }
   }
 }

@@ -30,4 +30,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 세션 내보내기
   exportSession:  (content: string, format: string, sessionName: string) =>
     ipcRenderer.invoke('session:export', content, format, sessionName),
+  // Obsidian 연동
+  searchObsidianNote: (projectName: string) =>
+    ipcRenderer.invoke('obsidian:searchNote', projectName),
+  openObsidianNote:   (filePath: string) =>
+    ipcRenderer.invoke('obsidian:openNote', filePath),
+  // 딥링크 수신
+  onDeepLink: (callback: (url: string) => void) => {
+    ipcRenderer.on('deeplink:navigate', (_event, url: string) => callback(url))
+  },
 })

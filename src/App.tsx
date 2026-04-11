@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import type { Session, AppSettings, Project } from './types'
+import type { Session, AppSettings, Project, ProjectStatus } from './types'
 import Sidebar from './components/Sidebar'
 import SessionList from './components/SessionList'
 import SessionDetail from './components/SessionDetail'
@@ -8,6 +8,8 @@ import Dashboard from './components/Dashboard'
 import SettingsPanel from './components/SettingsPanel'
 import TrashView from './components/TrashView'
 import ProjectsView from './components/ProjectsView'
+import ProjectDetailView from './components/ProjectDetailView'
+import type { ProjectFormData } from './components/ProjectModal'
 import { formatDistanceToNow } from 'date-fns'
 import { ko } from 'date-fns/locale'
 
@@ -32,6 +34,7 @@ export default function App() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [metadata, setMetadata] = useState<Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string }>>({})
   const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
 
   // H-1: 앱 시작 시 설정 + 프로젝트 불러오기
   useEffect(() => {
@@ -40,7 +43,15 @@ export default function App() {
       if (saved) setSettings(saved)
     }).catch(() => { /* 설정 파일 없으면 기본값 사용 */ })
     window.electronAPI.loadProjects().then(saved => {
-      if (Array.isArray(saved)) setProjects(saved as Project[])
+      if (Array.isArray(saved)) {
+        const normalized = (saved as Project[]).map(p => ({
+          ...p,
+          // 마이그레이션: pending → completed (Obsidian 상태와 통일)
+          status: (p.status as string) === 'pending' ? 'completed' as ProjectStatus : (p.status as ProjectStatus) || 'active',
+          updatedAt: p.updatedAt || p.createdAt,
+        }))
+        setProjects(normalized)
+      }
     }).catch(() => {})
   }, [])
 
@@ -77,6 +88,25 @@ export default function App() {
   // 삭제되지 않은 세션만 표시
   const activeSessions = useMemo(() => sessions.filter(s => !s.isDeleted), [sessions])
   const deletedSessions = useMemo(() => sessions.filter(s => s.isDeleted), [sessions])
+
+  // folderPath 기반 자동 프로젝트 매칭 (런타임만, 메타 저장 안 함)
+  const sessionsWithAutoProject = useMemo(() => {
+    const folderToProject = new Map<string, string>()
+    for (const p of projects) {
+      if (p.folderPath) folderToProject.set(p.folderPath, p.id)
+    }
+    return activeSessions.map(s => {
+      if (s.projectId) return s  // 수동 배정 우선
+      const autoId = folderToProject.get(s.project)
+      return autoId ? { ...s, projectId: autoId } : s
+    })
+  }, [activeSessions, projects])
+
+  // 감지된 고유 폴더 목록 (ProjectModal 드롭다운용)
+  const uniqueFolders = useMemo(
+    () => Array.from(new Set(activeSessions.map(s => s.project))).sort(),
+    [activeSessions]
+  )
 
   // 검색 연산자 파서
   const parseSearchQuery = (query: string) => {
@@ -137,6 +167,32 @@ export default function App() {
     setFilteredSessions(result)
   }, [searchQuery, activeSessions, selectedTag])
 
+  // 딥링크 수신 (cmdtrace://project/{id})
+  useEffect(() => {
+    window.electronAPI?.onDeepLink?.((url: string) => {
+      const projectMatch = url.match(/cmdtrace:\/\/project\/(.+)/)
+      if (projectMatch) {
+        const projectId = decodeURIComponent(projectMatch[1])
+        setActiveView('projects')
+        setSelectedProjectId(projectId)
+      }
+      const sessionMatch = url.match(/cmdtrace:\/\/session\/(.+)/)
+      if (sessionMatch) {
+        const sessionId = decodeURIComponent(sessionMatch[1])
+        const session = sessions.find(s => s.id === sessionId || s.sessionId === sessionId)
+        if (session) {
+          setActiveView('sessions')
+          setSelectedSession(session)
+        }
+      }
+    })
+  }, [sessions])
+
+  // 뷰 전환 시 프로젝트 상세 초기화
+  useEffect(() => {
+    if (activeView !== 'projects') setSelectedProjectId(null)
+  }, [activeView])
+
   // 키보드 단축키
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -194,23 +250,26 @@ export default function App() {
     }
   }, [])
 
-  const createProject = async (data: { name: string; description: string; color: string }) => {
+  const createProject = async (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'sessionIds'>) => {
+    const now = new Date().toISOString()
     const newProject: Project = {
       id: `proj_${Date.now()}`,
-      name: data.name,
-      description: data.description,
-      color: data.color,
-      createdAt: new Date().toISOString(),
+      ...data,
+      createdAt: now,
+      updatedAt: now,
       sessionIds: [],
     }
     await saveProjects([...projects, newProject])
   }
 
-  const updateProject = async (id: string, data: { name: string; description: string; color: string }) => {
-    await saveProjects(projects.map(p => p.id === id ? { ...p, ...data } : p))
+  const updateProject = async (id: string, data: Partial<Project>) => {
+    await saveProjects(projects.map(p =>
+      p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p
+    ))
   }
 
   const deleteProject = async (id: string) => {
+    if (selectedProjectId === id) setSelectedProjectId(null)
     // 프로젝트 삭제 시 소속 세션의 projectId 제거
     const updated = sessions.map(s => s.projectId === id ? { ...s, projectId: undefined } : s)
     const newMeta = { ...metadata }
@@ -227,6 +286,19 @@ export default function App() {
 
   const assignSessionToProject = async (sessionId: string, projectId: string | null) => {
     await applyMetaUpdate(sessionId, { projectId: projectId === null ? undefined : projectId })
+  }
+
+  const createProjectFromSession = async (sessionId: string, data: ProjectFormData) => {
+    const now = new Date().toISOString()
+    const newProject: Project = {
+      id: `proj_${Date.now()}`,
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+      sessionIds: [],
+    }
+    await saveProjects([...projects, newProject])
+    await applyMetaUpdate(sessionId, { projectId: newProject.id })
   }
 
   // H-1: 설정 변경 시 저장
@@ -286,25 +358,42 @@ export default function App() {
         <div className="flex-1 overflow-hidden">
           {activeView === 'sessions' && selectedSession ? (
             <SessionDetail
-              session={selectedSession}
+              session={sessionsWithAutoProject.find(s => s.id === selectedSession.id) ?? selectedSession}
               settings={settings}
               onUpdateMeta={updateSessionMeta}
               onDelete={deleteSession}
+              projects={projects}
+              folders={uniqueFolders}
+              onAssignSession={assignSessionToProject}
+              onCreateProjectFromSession={createProjectFromSession}
             />
           ) : activeView === 'sessions' ? (
             <EmptyState onRefresh={loadSessions} />
           ) : activeView === 'dashboard' ? (
             <Dashboard sessions={activeSessions} />
           ) : activeView === 'projects' ? (
+            selectedProjectId && projects.find(p => p.id === selectedProjectId) ? (
+              <ProjectDetailView
+                project={projects.find(p => p.id === selectedProjectId)!}
+                sessions={sessionsWithAutoProject}
+                onBack={() => setSelectedProjectId(null)}
+                onUpdateProject={updateProject}
+                onSelectSession={s => { setSelectedSession(s); setActiveView('sessions') }}
+                onAssignSession={assignSessionToProject}
+              />
+            ) : (
             <ProjectsView
               projects={projects}
-              sessions={activeSessions}
+              sessions={sessionsWithAutoProject}
+              folders={uniqueFolders}
               onCreateProject={createProject}
               onUpdateProject={updateProject}
               onDeleteProject={deleteProject}
               onAssignSession={assignSessionToProject}
               onSelectSession={s => { setSelectedSession(s); setActiveView('sessions') }}
+              onSelectProject={setSelectedProjectId}
             />
+            )
           ) : activeView === 'trash' ? (
             <TrashView
               sessions={deletedSessions}
