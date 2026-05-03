@@ -92,6 +92,7 @@ Key IPC channels:
 - `metadata:load` / `metadata:save` — read/write cmdtrace-meta.json
 - `settings:load` / `settings:save` — read/write cmdtrace-settings.json
 - `projects:load` / `projects:save` — read/write cmdtrace-projects.json
+- `workspaces:load` / `workspaces:save` — read/write cmdtrace-workspaces.json
 - `session:export` — file save dialog + write MD/JSON/HTML
 - `shell:openFolder` — open project folder in Explorer
 
@@ -111,14 +112,21 @@ Parsed in `parseSearchQuery()` in App.tsx:
 
 ### Session Resume (Windows Terminal)
 Uses `wt` (Windows Terminal), `powershell`, or `cmd` based on settings.
-Spawns in a new tab/pane with `claude --resume <sessionId>` in the project directory.
+Spawns in a new tab/pane with `claude -r <sessionId>` (or `opencode -r` for OpenCode sessions) in the project directory.
 Supports `--dangerously-skip-permissions` flag via `bypassPermissions` setting.
+
+### Workspace Snapshot
+- `WorkspaceEntry` — stores sessionId, projectPath, title, order, agentType
+- `Workspace` — named collection of WorkspaceEntry[], persisted to cmdtrace-workspaces.json
+- Multi-select via checkboxes in SessionList (hover to reveal)
+- Batch restore: `resetPanes()` + sequential `resumeSession()` loop with 300ms delay
+- Restores into 2×2 Windows Terminal pane grid (5+ sessions open new tabs)
 
 ## Code Conventions
 
 - Props interfaces declared inline above each component
 - Helper functions at bottom of file (after `export default`)
-- IPC handlers grouped by domain (sessions, metadata, settings, projects)
+- IPC handlers grouped by domain (sessions, metadata, settings, projects, workspaces)
 - Security validation always before file I/O
 - `applyMetaUpdate()` is the single path for any session metadata change
 - Tailwind tokens: `surface.{base/soft/subtle}`, `ink.{primary/secondary/muted/faint}`, `brand.*`
@@ -152,6 +160,7 @@ Light-only theme based on flex.team visual language:
 | Session export (MD / JSON / HTML) | ✅ |
 | Projects (CRUD, color coding, drag-drop session assignment) | ✅ |
 | Dashboard charts (30-day activity, project distribution) | ✅ |
+| Workspace Snapshot (multi-select, save/restore session groups) | ✅ |
 
 ### Pending
 | Feature | Priority |
