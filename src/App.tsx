@@ -329,6 +329,18 @@ export default function App() {
     setShowSaveWorkspaceModal(false)
   }
 
+  const saveActiveAsWorkspace = useCallback(() => {
+    // 현재 실행 중인 세션(초록 점)만 자동 선택 후 저장 모달 열기
+    const activeIds = new Set(
+      activeSessions
+        .filter(s => activeSessionIds.has(s.sessionId))
+        .map(s => s.id)
+    )
+    if (activeIds.size === 0) return
+    setSelectedSessionIds(activeIds)
+    setShowSaveWorkspaceModal(true)
+  }, [activeSessions, activeSessionIds])
+
   const deleteWorkspace = useCallback(async (id: string) => {
     await saveWorkspaces(workspaces.filter(w => w.id !== id))
   }, [workspaces, saveWorkspaces])
@@ -523,6 +535,7 @@ export default function App() {
             })}
             onSaveAsWorkspace={() => setShowSaveWorkspaceModal(true)}
             onClearSelection={() => setSelectedSessionIds(new Set())}
+            onSaveActiveAsWorkspace={saveActiveAsWorkspace}
           />
         )}
 

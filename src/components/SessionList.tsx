@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Search, RefreshCw, Loader2, Trash2, Star, Pin, Layers, Check, X } from 'lucide-react'
+import { Search, RefreshCw, Loader2, Trash2, Star, Pin, Layers, Check, X, Zap } from 'lucide-react'
 import type { Session } from '../types'
 
 interface Props {
@@ -17,6 +17,7 @@ interface Props {
   onSaveAsWorkspace: () => void
   onClearSelection: () => void
   activeSessionIds: Set<string>
+  onSaveActiveAsWorkspace: () => void
 }
 
 export default function SessionList({
@@ -34,6 +35,7 @@ export default function SessionList({
   onSaveAsWorkspace,
   onClearSelection,
   activeSessionIds,
+  onSaveActiveAsWorkspace,
 }: Props) {
   const grouped = useMemo(() => groupByDate(sessions), [sessions])
 
@@ -44,6 +46,16 @@ export default function SessionList({
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-ink-primary">세션 목록</span>
           <span className="text-xs text-ink-muted">({sessions.length})</span>
+          {activeSessionIds.size > 0 && (
+            <button
+              onClick={onSaveActiveAsWorkspace}
+              title={`실행 중인 세션 ${activeSessionIds.size}개를 워크스페이스로 저장`}
+              className="flex items-center gap-1 px-2 py-0.5 bg-green-50 hover:bg-green-100 text-green-600 text-[11px] font-semibold rounded-lg border border-green-200 transition-colors"
+            >
+              <Zap size={10} />
+              {activeSessionIds.size}개 저장
+            </button>
+          )}
           <button
             onClick={onRefresh}
             disabled={isLoading}
