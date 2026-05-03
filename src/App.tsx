@@ -264,6 +264,12 @@ export default function App() {
   const deleteSession = async (sessionId: string) => {
     await applyMetaUpdate(sessionId, { isDeleted: true })
     if (selectedSession?.id === sessionId) setSelectedSession(null)
+    setSelectedSessionIds(prev => {
+      if (!prev.has(sessionId)) return prev
+      const next = new Set(prev)
+      next.delete(sessionId)
+      return next
+    })
   }
 
   // 복원
