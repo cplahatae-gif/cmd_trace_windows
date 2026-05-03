@@ -39,6 +39,22 @@ export const PROJECT_COLORS = [
   '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6',
 ] as const
 
+// ─── 워크스페이스 스냅샷 ──────────────────────────────────
+export interface WorkspaceEntry {
+  sessionId: string        // Session.sessionId (claude -r 에 사용)
+  sessionRecordId: string  // Session.id (UI 조회용)
+  projectPath: string      // Session.project (wt -d 경로)
+  title: string            // 저장 시점의 표시 이름
+  order: number            // 1-based, 페인 순서
+}
+
+export interface Workspace {
+  id: string               // `ws_${Date.now()}`
+  name: string
+  createdAt: string        // ISO 8601
+  entries: WorkspaceEntry[]
+}
+
 // ─── 메시지 ──────────────────────────────────────────────
 export interface Message {
   role: 'user' | 'assistant'
@@ -142,6 +158,9 @@ declare global {
       backfillObsidianCmdtraceId: (notePath: string, projectId: string) => Promise<{ ok: boolean; error?: string }>
       // 딥링크
       onDeepLink: (callback: (url: string) => void) => void
+      // 워크스페이스
+      saveWorkspaces: (data: Workspace[]) => Promise<{ success: boolean }>
+      loadWorkspaces: () => Promise<Workspace[]>
     }
   }
 }

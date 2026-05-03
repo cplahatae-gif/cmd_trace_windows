@@ -11,10 +11,11 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
 // ─── 상수 (중복 제거) ──────────────────────────────────────
-const CLAUDE_BASE     = path.join(os.homedir(), '.claude', 'projects')
-const META_PATH       = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json')
-const SETTINGS_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-settings.json')
-const PROJECTS_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-projects.json')
+const CLAUDE_BASE       = path.join(os.homedir(), '.claude', 'projects')
+const META_PATH         = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json')
+const SETTINGS_PATH     = path.join(os.homedir(), '.claude', 'cmdtrace-settings.json')
+const PROJECTS_PATH     = path.join(os.homedir(), '.claude', 'cmdtrace-projects.json')
+const WORKSPACES_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-workspaces.json')
 
 // ─── Obsidian 연동 — 설정에서 동적 로드 ────────────────────
 interface ObsidianConfig {
@@ -289,6 +290,26 @@ ipcMain.handle('projects:load', async () => {
   if (!fs.existsSync(PROJECTS_PATH)) return []
   try {
     return JSON.parse(fs.readFileSync(PROJECTS_PATH, 'utf-8'))
+  } catch {
+    return []
+  }
+})
+
+// ─── IPC: 워크스페이스 저장/불러오기 ──────────────────────
+ipcMain.handle('workspaces:save', async (_event, data: unknown[]) => {
+  try {
+    fs.writeFileSync(WORKSPACES_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    return { success: true }
+  } catch (err) {
+    console.error('워크스페이스 저장 실패:', err)
+    return { success: false }
+  }
+})
+
+ipcMain.handle('workspaces:load', async () => {
+  if (!fs.existsSync(WORKSPACES_PATH)) return []
+  try {
+    return JSON.parse(fs.readFileSync(WORKSPACES_PATH, 'utf-8'))
   } catch {
     return []
   }

@@ -47,4 +47,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onDeepLink: (callback: (url: string) => void) => {
     ipcRenderer.on('deeplink:navigate', (_event, url: string) => callback(url))
   },
+  // 워크스페이스
+  saveWorkspaces: (data: Record<string, unknown>[]) =>
+    ipcRenderer.invoke('workspaces:save', data),
+  loadWorkspaces: () =>
+    ipcRenderer.invoke('workspaces:load'),
 })

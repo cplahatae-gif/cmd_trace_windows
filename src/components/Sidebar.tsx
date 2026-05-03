@@ -1,13 +1,14 @@
-import { MessageSquare, LayoutDashboard, Settings, Tag, Trash2, FolderKanban } from 'lucide-react'
+import { MessageSquare, LayoutDashboard, Settings, Tag, Trash2, FolderKanban, Layers } from 'lucide-react'
 
 interface Props {
-  activeView: 'sessions' | 'dashboard' | 'projects' | 'settings' | 'trash'
-  onViewChange: (v: 'sessions' | 'dashboard' | 'projects' | 'settings' | 'trash') => void
+  activeView: 'sessions' | 'dashboard' | 'projects' | 'workspaces' | 'settings' | 'trash'
+  onViewChange: (v: 'sessions' | 'dashboard' | 'projects' | 'workspaces' | 'settings' | 'trash') => void
   allTags: string[]
   selectedTag: string | null
   onTagSelect: (tag: string | null) => void
   sessionCount: number
   trashCount: number
+  workspaceCount: number
 }
 
 export default function Sidebar({
@@ -18,11 +19,13 @@ export default function Sidebar({
   onTagSelect,
   sessionCount,
   trashCount,
+  workspaceCount,
 }: Props) {
   const navItems = [
     { id: 'sessions' as const, icon: MessageSquare, label: '세션', badge: sessionCount },
     { id: 'dashboard' as const, icon: LayoutDashboard, label: '대시보드' },
     { id: 'projects' as const, icon: FolderKanban, label: '프로젝트' },
+    { id: 'workspaces' as const, icon: Layers, label: '워크스페이스', badge: workspaceCount },
     { id: 'settings' as const, icon: Settings, label: '설정' },
     { id: 'trash' as const, icon: Trash2, label: '휴지통', badge: trashCount },
   ]
