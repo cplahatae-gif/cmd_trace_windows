@@ -303,6 +303,7 @@ export default function App() {
       projectPath: s.project,
       title: s.customName || s.preview.slice(0, 60) || s.sessionId,
       order: i + 1,
+      agentType: settings.agentType,
     }))
     const ws: Workspace = {
       id: `ws_${Date.now()}`,

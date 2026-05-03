@@ -43,9 +43,10 @@ export const PROJECT_COLORS = [
 export interface WorkspaceEntry {
   sessionId: string        // Session.sessionId (claude -r 에 사용)
   sessionRecordId: string  // Session.id (UI 조회용)
-  projectPath: string      // Session.project (wt -d 경로)
+  projectPath: string      // Session.project (wt -d 경로, 실존하는 경우만)
   title: string            // 저장 시점의 표시 이름
   order: number            // 1-based, 페인 순서
+  agentType: string        // 'claude' | 'opencode' — 복원 시 올바른 CLI 선택용
 }
 
 export interface Workspace {
@@ -139,7 +140,7 @@ declare global {
       loadSessions: (agentType: string) => Promise<Session[]>
       loadMessages: (projectFolder: string, fileName: string) => Promise<Message[]>
       loadInsights: (projectFolder: string, fileName: string) => Promise<SessionInsights>
-      resumeSession: (sessionId: string, projectPath: string, terminal: string, bypass: boolean) => Promise<{ success: boolean }>
+      resumeSession: (sessionId: string, projectPath: string, terminal: string, bypass: boolean, agentType?: string) => Promise<{ success: boolean; error?: string }>
       openFolder: (folderPath: string) => Promise<void>
       resetPanes: () => Promise<{ success: boolean }>
       saveMetadata: (data: Record<string, unknown>) => Promise<{ success: boolean }>

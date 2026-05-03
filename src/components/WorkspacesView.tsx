@@ -16,21 +16,29 @@ export default function WorkspacesView({ workspaces, settings, onDelete, onRenam
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
+  const [restoreError, setRestoreError] = useState<string | null>(null)
 
   const handleRestoreAll = async (ws: Workspace) => {
     if (!window.electronAPI || resumingId) return
     setResumingId(ws.id)
+    setRestoreError(null)
+    const failed: string[] = []
     try {
       await window.electronAPI.resetPanes()
       const sorted = [...ws.entries].sort((a, b) => a.order - b.order)
       for (const entry of sorted) {
-        await window.electronAPI.resumeSession(
+        const res = await window.electronAPI.resumeSession(
           entry.sessionId,
           entry.projectPath,
           settings.terminal,
-          settings.bypassPermissions
+          settings.bypassPermissions,
+          entry.agentType || 'claude'
         )
+        if (!res.success) failed.push(entry.title)
         await new Promise(r => setTimeout(r, 300))
+      }
+      if (failed.length > 0) {
+        setRestoreError(`${failed.length}개 세션 재개 실패: ${failed.slice(0, 2).join(', ')}${failed.length > 2 ? ' 외' : ''}`)
       }
     } finally {
       setResumingId(null)
@@ -71,6 +79,12 @@ export default function WorkspacesView({ workspaces, settings, onDelete, onRenam
         <h1 className="text-base font-semibold text-ink-primary">워크스페이스</h1>
         <p className="text-xs text-ink-muted mt-0.5">저장된 세션 묶음을 한 번에 재개합니다</p>
       </div>
+      {restoreError && (
+        <div className="flex items-center justify-between px-4 py-2 bg-red-50 border-b border-red-100 text-red-600 text-xs shrink-0">
+          <span>⚠️ {restoreError}</span>
+          <button onClick={() => setRestoreError(null)} className="ml-4 text-red-400 hover:text-red-600 p-0.5">✕</button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto scrollbar-thin p-5 space-y-3">
         {workspaces.map(ws => (

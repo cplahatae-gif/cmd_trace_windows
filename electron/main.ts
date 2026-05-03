@@ -157,7 +157,7 @@ ipcMain.handle('session:insights', async (_event, projectFolder: string, fileNam
 })
 
 // ─── IPC: 세션 재개 (C-1 수정) ────────────────────────────
-ipcMain.handle('session:resume', async (_event, sessionId: string, projectPath: string, terminal: string, bypass: boolean) => {
+ipcMain.handle('session:resume', async (_event, sessionId: string, projectPath: string, terminal: string, bypass: boolean, agentType?: string) => {
   // sessionId 검증 (C-1: 명령어 인젝션 방지)
   const safeId = sanitizeSessionId(sessionId)
   if (!safeId) {
@@ -166,18 +166,21 @@ ipcMain.handle('session:resume', async (_event, sessionId: string, projectPath: 
   }
 
   // projectPath 검증 (빈 문자열은 허용, 있으면 실제 디렉토리여야 함)
-  if (projectPath && !isValidDirectory(projectPath)) {
-    console.error('[보안] 유효하지 않은 projectPath:', projectPath)
-    return { success: false, error: 'Invalid project path' }
+  // 디렉토리가 없으면 경고만 하고 -d 없이 계속 (저장된 경로가 이동/삭제된 경우 대응)
+  const validProjectPath = (projectPath && isValidDirectory(projectPath)) ? projectPath : ''
+  if (projectPath && !validProjectPath) {
+    console.warn('[경고] projectPath 디렉토리 없음, -d 없이 재개:', projectPath)
   }
 
-  // 안전한 claude 명령어 인수 배열 (문자열 연결 금지)
-  const claudeArgs = bypass
-    ? ['claude', '-r', safeId, '--dangerously-skip-permissions']
-    : ['claude', '-r', safeId]
-  const resumeCmd = claudeArgs.join(' ') // safeId는 알파뉴메릭만 허용되므로 안전
+  // agentType에 따라 CLI 선택 (기본값: claude)
+  const cli = agentType === 'opencode' ? 'opencode' : 'claude'
+  // 안전한 명령어 인수 배열 (문자열 연결 금지)
+  const cliArgs = (cli === 'claude' && bypass)
+    ? [cli, '-r', safeId, '--dangerously-skip-permissions']
+    : [cli, '-r', safeId]
+  const resumeCmd = cliArgs.join(' ') // safeId는 알파뉴메릭만 허용되므로 안전
 
-  const dirArgs = projectPath ? ['-d', projectPath] : []
+  const dirArgs = validProjectPath ? ['-d', validProjectPath] : []
 
   const shellArgs = terminal === 'powershell'
     ? ['powershell', '-NoExit', '-Command', resumeCmd]
@@ -309,7 +312,16 @@ ipcMain.handle('workspaces:save', async (_event, data: unknown[]) => {
 ipcMain.handle('workspaces:load', async () => {
   if (!fs.existsSync(WORKSPACES_PATH)) return []
   try {
-    return JSON.parse(fs.readFileSync(WORKSPACES_PATH, 'utf-8'))
+    const parsed = JSON.parse(fs.readFileSync(WORKSPACES_PATH, 'utf-8'))
+    if (!Array.isArray(parsed)) return []
+    // 기본 스키마 검증: id/name/entries가 있는 항목만 통과
+    return parsed.filter((w: unknown) =>
+      w !== null &&
+      typeof w === 'object' &&
+      typeof (w as Record<string, unknown>).id === 'string' &&
+      typeof (w as Record<string, unknown>).name === 'string' &&
+      Array.isArray((w as Record<string, unknown>).entries)
+    )
   } catch {
     return []
   }

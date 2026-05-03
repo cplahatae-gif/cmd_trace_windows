@@ -7,8 +7,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('session:messages', projectFolder, fileName),
   loadInsights:   (projectFolder: string, fileName: string) =>
     ipcRenderer.invoke('session:insights', projectFolder, fileName),
-  resumeSession:  (sessionId: string, projectPath: string, terminal: string, bypass: boolean) =>
-    ipcRenderer.invoke('session:resume', sessionId, projectPath, terminal, bypass),
+  resumeSession:  (sessionId: string, projectPath: string, terminal: string, bypass: boolean, agentType?: string) =>
+    ipcRenderer.invoke('session:resume', sessionId, projectPath, terminal, bypass, agentType),
   openFolder:     (folderPath: string) =>
     ipcRenderer.invoke('shell:openFolder', folderPath),
   resetPanes:     () =>
