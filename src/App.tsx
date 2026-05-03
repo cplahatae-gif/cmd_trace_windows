@@ -288,7 +288,8 @@ export default function App() {
   }, [])
 
   const createWorkspace = async (name: string) => {
-    const selected = filteredSessions.filter(s => selectedSessionIds.has(s.id))
+    // filteredSessions 대신 activeSessions 사용: 검색 중에도 선택된 모든 세션 포함
+    const selected = activeSessions.filter(s => selectedSessionIds.has(s.id))
     if (selected.length === 0) return
     const entries: WorkspaceEntry[] = selected.map((s, i) => ({
       sessionId: s.sessionId,

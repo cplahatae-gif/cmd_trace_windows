@@ -160,7 +160,7 @@ export default function WorkspacesView({ workspaces, settings, onDelete, onRenam
                     <button
                       onClick={() => handleRestoreAll(ws)}
                       disabled={!!resumingId}
-                      className="flex items-center gap-1.5 px-3 py-1.5 btn-primary text-xs disabled:opacity-50"
+                      className="btn-primary disabled:opacity-50"
                     >
                       {resumingId === ws.id
                         ? <Loader2 size={11} className="animate-spin" />
