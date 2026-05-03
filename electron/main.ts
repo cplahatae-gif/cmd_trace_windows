@@ -298,6 +298,32 @@ ipcMain.handle('projects:load', async () => {
   }
 })
 
+// ─── IPC: 실행 중인 세션 감지 ──────────────────────────────
+ipcMain.handle('sessions:getActive', () => {
+  return new Promise<string[]>((resolve) => {
+    // WMI로 claude/opencode -r <sessionId> 프로세스 스캔
+    const proc = spawn('powershell', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      'Get-WmiObject Win32_Process | Where-Object {$_.CommandLine -ne $null -and ($_.CommandLine -like "*claude*-r*" -or $_.CommandLine -like "*opencode*-r*")} | Select-Object -ExpandProperty CommandLine',
+    ], { timeout: 8000 })
+
+    let output = ''
+    proc.stdout.on('data', (d: Buffer) => { output += d.toString() })
+    proc.on('close', () => {
+      const sessionIds: string[] = []
+      for (const line of output.split('\n')) {
+        const match = line.match(/-r\s+([a-zA-Z0-9_-]{8,40})/)
+        if (match) {
+          const safeId = sanitizeSessionId(match[1])
+          if (safeId) sessionIds.push(safeId)
+        }
+      }
+      resolve(sessionIds)
+    })
+    proc.on('error', () => resolve([]))
+  })
+})
+
 // ─── IPC: 워크스페이스 저장/불러오기 ──────────────────────
 ipcMain.handle('workspaces:save', async (_event, data: unknown[]) => {
   try {

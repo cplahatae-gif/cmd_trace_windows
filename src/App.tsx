@@ -46,6 +46,7 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set())
   const [showSaveWorkspaceModal, setShowSaveWorkspaceModal] = useState(false)
+  const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set())
 
   // 테마 적용 — settings.theme 변경 시 .dark 클래스 토글
   useEffect(() => {
@@ -113,6 +114,18 @@ export default function App() {
   }, [settings.agentType])
 
   useEffect(() => { loadSessions() }, [loadSessions])
+
+  // 실행 중인 세션 10초마다 폴링
+  useEffect(() => {
+    if (!window.electronAPI?.getActiveSessions) return
+    const poll = async () => {
+      const ids = await window.electronAPI.getActiveSessions().catch(() => [])
+      setActiveSessionIds(new Set(ids))
+    }
+    poll()
+    const timer = setInterval(poll, 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   // 삭제되지 않은 세션만 표시
   const activeSessions = useMemo(() => sessions.filter(s => !s.isDeleted), [sessions])
@@ -501,6 +514,7 @@ export default function App() {
             formatRelativeTime={(date: string) =>
               formatDistanceToNow(new Date(date), { addSuffix: true, locale: ko })
             }
+            activeSessionIds={activeSessionIds}
             selectedSessionIds={selectedSessionIds}
             onToggleSelect={(id) => setSelectedSessionIds(prev => {
               const next = new Set(prev)
@@ -517,6 +531,7 @@ export default function App() {
             <SessionDetail
               session={sessionsWithAutoProject.find(s => s.id === selectedSession.id) ?? selectedSession}
               settings={settings}
+              isActive={activeSessionIds.has(selectedSession.sessionId)}
               onUpdateMeta={updateSessionMeta}
               onDelete={deleteSession}
               projects={projects}

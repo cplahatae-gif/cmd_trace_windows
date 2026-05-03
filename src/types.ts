@@ -138,6 +138,7 @@ declare global {
   interface Window {
     electronAPI: {
       loadSessions: (agentType: string) => Promise<Session[]>
+      getActiveSessions: () => Promise<string[]>
       loadMessages: (projectFolder: string, fileName: string) => Promise<Message[]>
       loadInsights: (projectFolder: string, fileName: string) => Promise<SessionInsights>
       resumeSession: (sessionId: string, projectPath: string, terminal: string, bypass: boolean, agentType?: string) => Promise<{ success: boolean; error?: string }>

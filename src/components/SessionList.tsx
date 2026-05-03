@@ -16,6 +16,7 @@ interface Props {
   onToggleSelect: (id: string) => void
   onSaveAsWorkspace: () => void
   onClearSelection: () => void
+  activeSessionIds: Set<string>
 }
 
 export default function SessionList({
@@ -32,6 +33,7 @@ export default function SessionList({
   onToggleSelect,
   onSaveAsWorkspace,
   onClearSelection,
+  activeSessionIds,
 }: Props) {
   const grouped = useMemo(() => groupByDate(sessions), [sessions])
 
@@ -112,6 +114,7 @@ export default function SessionList({
                   session={session}
                   isSelected={selectedSession?.id === session.id}
                   isChecked={selectedSessionIds.has(session.id)}
+                  isActive={activeSessionIds.has(session.sessionId)}
                   onSelect={() => onSelectSession(session)}
                   onDelete={() => onDelete(session.id)}
                   onToggleSelect={() => onToggleSelect(session.id)}
@@ -131,6 +134,7 @@ function SessionItem({
   session,
   isSelected,
   isChecked,
+  isActive,
   onSelect,
   onDelete,
   onToggleSelect,
@@ -139,6 +143,7 @@ function SessionItem({
   session: Session
   isSelected: boolean
   isChecked: boolean
+  isActive: boolean
   onSelect: () => void
   onDelete: () => void
   onToggleSelect: () => void
@@ -209,6 +214,12 @@ function SessionItem({
         ) : (
           <>
             <div className="flex items-center gap-1 pr-7">
+              {isActive && (
+                <span
+                  className="w-2 h-2 rounded-full bg-green-500 shrink-0 animate-pulse"
+                  title="현재 실행 중"
+                />
+              )}
               {session.isPinned && <Pin size={10} className="text-brand-400 shrink-0" fill="currentColor" />}
               {session.isFavorited && <Star size={10} className="text-amber-400 shrink-0" fill="currentColor" />}
               <p className={`text-sm font-medium truncate leading-snug ${

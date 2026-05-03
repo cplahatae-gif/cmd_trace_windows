@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electronAPI', {
   loadSessions:   (agentType: string) =>
     ipcRenderer.invoke('sessions:load', agentType),
+  getActiveSessions: () =>
+    ipcRenderer.invoke('sessions:getActive'),
   loadMessages:   (projectFolder: string, fileName: string) =>
     ipcRenderer.invoke('session:messages', projectFolder, fileName),
   loadInsights:   (projectFolder: string, fileName: string) =>
