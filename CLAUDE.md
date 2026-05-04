@@ -161,12 +161,21 @@ Light-only theme based on flex.team visual language:
 | Projects (CRUD, color coding, drag-drop session assignment) | ✅ |
 | Dashboard charts (30-day activity, project distribution) | ✅ |
 | Workspace Snapshot (multi-select, save/restore session groups) | ✅ |
+| Active session detection (green dot, WMI process scan) | ✅ |
+| content:/regex: full-text search operators | ✅ |
+| File watch auto-refresh (fs.watch + debounce) | ✅ |
+| Bulk pin/favorite (multi-select action bar) | ✅ |
+| AI Summary (Anthropic/OpenAI, settings panel) | ✅ |
+| Session Diff (side-by-side comparison view) | ✅ |
+| Markdown rendering (remark-gfm + syntax highlighting) | ✅ |
+| Workspace restore timing fix (single wt command) | ✅ |
 
 ### Pending
 | Feature | Priority |
 |---------|----------|
 | Dark mode CSS (ThemeType defined, CSS not implemented) | Medium |
-| Windows Terminal integration testing | Medium |
+| ccusage Burn Rate / Native Monitor | Medium |
+| Built-in HTTP server (webapp dashboard) | Low |
 | Tray icon (code exists, needs real icon asset) | Low |
 | Phase 6: 테마 전환 UI | Low |
 
