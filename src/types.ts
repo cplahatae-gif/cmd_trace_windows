@@ -172,6 +172,8 @@ declare global {
       restoreWorkspace: (entries: { sessionId: string; projectPath: string; agentType: string; title: string }[], terminal: string, bypass: boolean) => Promise<{ success: boolean; error?: string }>
       // 컨텐츠 검색 (content:/regex: 연산자)
       searchContent: (query: string, isRegex: boolean, agentType: string) => Promise<string[]>
+      // ccusage 사용량
+      loadUsage: () => Promise<{ ok: boolean; data?: { totalCost: number; totalInputTokens: number; totalOutputTokens: number; daily: { date: string; cost: number; inputTokens: number; outputTokens: number }[] }; error?: string }>
       // AI 요약
       summarizeSession: (messages: { role: string; content: string }[], provider: string, apiKey: string) => Promise<{ ok: boolean; summary?: string; error?: string }>
       // 파일 감시 이벤트 — 반환값은 cleanup 함수

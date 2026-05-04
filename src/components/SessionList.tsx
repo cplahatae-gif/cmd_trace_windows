@@ -22,6 +22,26 @@ interface Props {
   onBulkFavorite: () => void
 }
 
+// ─── 검색 하이라이트 ─────────────────────────────────────
+function Highlight({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>
+  try {
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const parts = text.split(new RegExp(`(${escaped})`, 'gi'))
+    return (
+      <>
+        {parts.map((part, i) =>
+          part.toLowerCase() === query.toLowerCase()
+            ? <mark key={i} className="search-highlight">{part}</mark>
+            : <span key={i}>{part}</span>
+        )}
+      </>
+    )
+  } catch {
+    return <>{text}</>
+  }
+}
+
 export default function SessionList({
   sessions,
   selectedSession,
@@ -42,6 +62,15 @@ export default function SessionList({
   onBulkFavorite,
 }: Props) {
   const grouped = useMemo(() => groupByDate(sessions), [sessions])
+
+  // 검색어에서 연산자 제외한 순수 텍스트만 추출 (하이라이트용)
+  const plainQuery = useMemo(() => {
+    const q = searchQuery.trim()
+    if (!q) return ''
+    // regex:/content: 연산자면 하이라이트 전체 스킵 (regex 패턴이 남으면 오작동)
+    if (/\b(content|regex):\S+/.test(q)) return ''
+    return q.replace(/\w+:\S+/g, '').trim()
+  }, [searchQuery])
 
   return (
     <div className="w-80 flex flex-col border-r border-border bg-surface-soft shrink-0">
@@ -149,6 +178,7 @@ export default function SessionList({
                   onDelete={() => onDelete(session.id)}
                   onToggleSelect={() => onToggleSelect(session.id)}
                   relativeTime={formatRelativeTime(session.lastActivity)}
+                  highlight={plainQuery}
                 />
               ))}
             </div>
@@ -169,6 +199,7 @@ function SessionItem({
   onDelete,
   onToggleSelect,
   relativeTime,
+  highlight,
 }: {
   session: Session
   isSelected: boolean
@@ -178,6 +209,7 @@ function SessionItem({
   onDelete: () => void
   onToggleSelect: () => void
   relativeTime: string
+  highlight: string
 }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const displayTitle = session.customName || session.preview.slice(0, 60) || session.sessionId
@@ -254,10 +286,12 @@ function SessionItem({
               {session.isFavorited && <Star size={10} className="text-amber-400 shrink-0" fill="currentColor" />}
               <p className={`text-sm font-medium truncate leading-snug ${
                 isSelected ? 'text-brand-700' : 'text-ink-primary'
-              }`}>{displayTitle}</p>
+              }`}><Highlight text={displayTitle} query={highlight} /></p>
             </div>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-ink-muted truncate flex-1">{projectName}</span>
+              <span className="text-xs text-ink-muted truncate flex-1">
+                <Highlight text={projectName} query={highlight} />
+              </span>
               <span className="text-xs text-ink-faint shrink-0">{relativeTime}</span>
             </div>
             {session.tags.length > 0 && (

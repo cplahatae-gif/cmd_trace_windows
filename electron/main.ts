@@ -1140,6 +1140,56 @@ function callOpenAIAPI(apiKey: string, system: string, user: string): Promise<{ 
   })
 }
 
+// ─── IPC: ccusage 사용량 데이터 ────────────────────────────
+interface CcUsageDay { date: string; cost: number; inputTokens: number; outputTokens: number; cacheWriteTokens?: number; cacheReadTokens?: number }
+interface CcUsageData { totalCost: number; totalInputTokens: number; totalOutputTokens: number; daily: CcUsageDay[] }
+
+ipcMain.handle('usage:load', () => {
+  return new Promise<{ ok: boolean; data?: CcUsageData; error?: string }>((resolve) => {
+    // ccusage JSON 출력 시도 (전역 설치 우선, npx 폴백)
+    // shell: false 유지 (기존 보안 패턴과 일관성)
+    // spawn에는 timeout 옵션이 없으므로 수동 타임아웃 구현
+    const tryCmd = (cmd: string, args: string[]) => {
+      return new Promise<string | null>((res) => {
+        const proc = spawn(cmd, args, { shell: false })
+        let out = ''
+        const timer = setTimeout(() => { proc.kill(); res(null) }, 15000)
+        proc.stdout.on('data', (d: Buffer) => { out += d.toString() })
+        proc.on('close', (code) => { clearTimeout(timer); res(code === 0 ? out : null) })
+        proc.on('error', () => { clearTimeout(timer); res(null) })
+      })
+    }
+
+    ;(async () => {
+      let raw: string | null = null
+      // 1차: 전역 ccusage
+      raw = await tryCmd('ccusage', ['--json'])
+      // 2차: npx
+      if (!raw) raw = await tryCmd('npx', ['-y', 'ccusage@latest', '--json'])
+      if (!raw) { resolve({ ok: false, error: 'ccusage를 찾을 수 없습니다. npm install -g ccusage 로 설치하세요.' }); return }
+
+      try {
+        const parsed = JSON.parse(raw)
+        // ccusage JSON 구조 정규화 (버전별 차이 대응)
+        const days: CcUsageDay[] = (parsed.daily ?? parsed.days ?? []).map((d: Record<string, unknown>) => ({
+          date: String(d.date ?? ''),
+          cost: Number(d.cost ?? d.totalCost ?? 0),
+          inputTokens: Number(d.inputTokens ?? d.input_tokens ?? 0),
+          outputTokens: Number(d.outputTokens ?? d.output_tokens ?? 0),
+          cacheWriteTokens: Number(d.cacheWriteTokens ?? d.cache_creation_input_tokens ?? 0),
+          cacheReadTokens: Number(d.cacheReadTokens ?? d.cache_read_input_tokens ?? 0),
+        }))
+        const totalCost = Number(parsed.totalCost ?? parsed.total_cost ?? days.reduce((s, d) => s + d.cost, 0))
+        const totalInputTokens = Number(parsed.totalInputTokens ?? days.reduce((s, d) => s + d.inputTokens, 0))
+        const totalOutputTokens = Number(parsed.totalOutputTokens ?? days.reduce((s, d) => s + d.outputTokens, 0))
+        resolve({ ok: true, data: { totalCost, totalInputTokens, totalOutputTokens, daily: days.slice(-30) } })
+      } catch {
+        resolve({ ok: false, error: 'ccusage 출력 파싱 실패' })
+      }
+    })()
+  })
+})
+
 // ─── Claude 세션 로더 ──────────────────────────────────────
 function loadClaudeSessions(claudeBase: string): SessionData[] {
   if (!fs.existsSync(claudeBase)) return []

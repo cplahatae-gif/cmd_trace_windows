@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download, FolderPlus, ChevronDown, ExternalLink, Sparkles, GitCompare } from 'lucide-react'
+import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download, FolderPlus, ChevronDown, ExternalLink, Sparkles, GitCompare, PanelRight, Copy } from 'lucide-react'
 import type { Session, Message, SessionInsights, AppSettings, ExportFormat, Project } from '../types'
 import { PROJECT_COLORS } from '../types'
 import MessageView from './MessageView'
@@ -49,6 +49,9 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
   const [diffSession, setDiffSession] = useState<Session | null>(null)
   const [diffMessages, setDiffMessages] = useState<Message[]>([])
   const [isDiffLoading, setIsDiffLoading] = useState(false)
+  const [showInspector, setShowInspector] = useState(false)
+  const [copiedId, setCopiedId] = useState(false)
+  const [inspectorTagInput, setInspectorTagInput] = useState('')
 
   const loadMessages = useCallback(async () => {
     if (!window.electronAPI) return
@@ -484,7 +487,19 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
             )}
           </div>
 
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            {/* Inspector 패널 토글 */}
+            <button
+              onClick={() => setShowInspector(v => !v)}
+              title={showInspector ? 'Inspector 숨기기' : 'Inspector 보기'}
+              className={`p-1.5 rounded-lg transition-colors ${
+                showInspector
+                  ? 'text-brand-500 bg-brand-50'
+                  : 'text-ink-faint hover:text-ink-secondary hover:bg-surface-subtle'
+              }`}
+            >
+              <PanelRight size={13} />
+            </button>
             {showDeleteConfirm ? (
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-ink-secondary">삭제?</span>
@@ -557,6 +572,8 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
         </div>
       )}
 
+      {/* ─── 본문 (Diff뷰 / 탭 콘텐츠 + Inspector 사이드바) ─── */}
+      <div className="flex flex-1 overflow-hidden">
       {/* 세션 비교 뷰 — diffSession이 설정되면 탭 콘텐츠 대신 표시 */}
       {diffSession && (
         isDiffLoading ? (
@@ -610,6 +627,100 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
           ) : null
         )}
       </div>}
+
+      {/* Inspector 사이드바 */}
+      {showInspector && !diffSession && (
+        <aside className="w-52 shrink-0 border-l border-border bg-surface-soft overflow-y-auto scrollbar-thin">
+          {/* 세션 정보 */}
+          <section className="px-3 py-3 border-b border-border">
+            <p className="text-[10px] font-semibold text-ink-faint uppercase tracking-widest mb-2">세션 정보</p>
+            <div className="space-y-1.5 text-[11px] text-ink-muted">
+              <div><span className="text-ink-faint">프로젝트</span><br /><span className="text-ink-secondary font-medium break-all">{projectName}</span></div>
+              <div><span className="text-ink-faint">메시지</span> <span className="text-ink-secondary font-medium">{session.messageCount}개</span></div>
+              {session.firstTimestamp && (
+                <div><span className="text-ink-faint">소요시간</span> <span className="text-ink-secondary font-medium">{formatDuration(session.firstTimestamp, session.lastActivity)}</span></div>
+              )}
+              <div><span className="text-ink-faint">마지막 활동</span><br /><span className="text-ink-secondary">{new Date(session.lastActivity).toLocaleDateString('ko-KR')}</span></div>
+            </div>
+          </section>
+
+          {/* 태그 */}
+          <section className="px-3 py-3 border-b border-border">
+            <p className="text-[10px] font-semibold text-ink-faint uppercase tracking-widest mb-2">태그</p>
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {session.tags.map(tag => (
+                <span key={tag} className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-brand-50 text-brand-600 rounded-full font-medium">
+                  #{tag}
+                  <button onClick={() => handleRemoveTag(tag)} className="hover:text-brand-800">
+                    <X size={8} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <Tag size={9} className="text-ink-faint" />
+              <input
+                value={inspectorTagInput}
+                onChange={e => setInspectorTagInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key !== 'Enter' || !inspectorTagInput.trim()) return
+                  const newTag = inspectorTagInput.trim().toLowerCase().replace(/\s+/g, '-')
+                  if (!session.tags.includes(newTag)) onUpdateMeta(session.id, { tags: [...session.tags, newTag] })
+                  setInspectorTagInput('')
+                }}
+                className="w-full bg-transparent text-[11px] text-ink-secondary focus:outline-none placeholder-ink-faint"
+                placeholder="태그 추가..."
+              />
+            </div>
+          </section>
+
+          {/* 퀵 액션 */}
+          <section className="px-3 py-3 border-b border-border">
+            <p className="text-[10px] font-semibold text-ink-faint uppercase tracking-widest mb-2">퀵 액션</p>
+            <div className="space-y-1">
+              <button
+                onClick={handleToggleFavorite}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                  session.isFavorited ? 'text-amber-600 bg-amber-50' : 'text-ink-secondary hover:bg-surface-subtle'
+                }`}
+              >
+                <Star size={12} fill={session.isFavorited ? 'currentColor' : 'none'} />
+                {session.isFavorited ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+              </button>
+              <button
+                onClick={handleTogglePin}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                  session.isPinned ? 'text-brand-500 bg-brand-50' : 'text-ink-secondary hover:bg-surface-subtle'
+                }`}
+              >
+                <Pin size={12} fill={session.isPinned ? 'currentColor' : 'none'} />
+                {session.isPinned ? '핀 해제' : '핀 고정'}
+              </button>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(session.sessionId)
+                  setCopiedId(true)
+                  setTimeout(() => setCopiedId(false), 1500)
+                }}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] font-medium text-ink-secondary hover:bg-surface-subtle transition-colors"
+              >
+                {copiedId ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+                {copiedId ? '복사됨!' : '세션 ID 복사'}
+              </button>
+            </div>
+          </section>
+
+          {/* AI 요약 결과 (있을 때만) */}
+          {summary && (
+            <section className="px-3 py-3">
+              <p className="text-[10px] font-semibold text-ink-faint uppercase tracking-widest mb-2">AI 요약</p>
+              <p className="text-[11px] text-ink-secondary whitespace-pre-wrap leading-relaxed">{summary}</p>
+              <button onClick={() => setSummary(null)} className="mt-1.5 text-[10px] text-ink-faint hover:text-ink-muted">지우기</button>
+            </section>
+          )}
+        </aside>
+      )}
+      </div>{/* 본문 flex row 닫기 */}
 
       {/* 비교 세션 선택 모달 */}
       {showDiffPicker && (

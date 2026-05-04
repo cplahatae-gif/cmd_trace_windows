@@ -1,6 +1,14 @@
-import { useMemo } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { useMemo, useState, useEffect } from 'react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts'
+import { RefreshCw, Loader2, TrendingUp } from 'lucide-react'
 import type { Session } from '../types'
+
+interface UsageData {
+  totalCost: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  daily: { date: string; cost: number; inputTokens: number; outputTokens: number }[]
+}
 
 export default function Dashboard({ sessions }: { sessions: Session[] }) {
   const totalMessages = sessions.reduce((sum, s) => sum + s.messageCount, 0)
@@ -48,8 +56,33 @@ export default function Dashboard({ sessions }: { sessions: Session[] }) {
   }, [sessions])
 
   const PIE_COLORS = ['#635bff', '#818cf8', '#a5b4fc', '#6ee7b7', '#fbbf24', '#f87171', '#60a5fa', '#d1d5db']
-
   const maxActivity = Math.max(...activityData.map(d => d.count), 1)
+
+  // ccusage 사용량
+  const [usage, setUsage] = useState<UsageData | null>(null)
+  const [usageError, setUsageError] = useState<string | null>(null)
+  const [usageLoading, setUsageLoading] = useState(false)
+
+  const loadUsage = async () => {
+    if (!window.electronAPI?.loadUsage) return
+    setUsageLoading(true)
+    setUsageError(null)
+    try {
+      const res = await window.electronAPI.loadUsage()
+      if (res.ok && res.data) setUsage(res.data)
+      else setUsageError(res.error ?? '알 수 없는 오류')
+    } catch { setUsageError('사용량 로드 실패') }
+    finally { setUsageLoading(false) }
+  }
+
+  useEffect(() => { loadUsage() }, [])
+
+  // 오늘 비용
+  const todayCost = useMemo(() => {
+    if (!usage) return null
+    const today = new Date().toISOString().slice(0, 10)
+    return usage.daily.find(d => d.date === today)?.cost ?? 0
+  }, [usage])
 
   return (
     <div className="p-6 h-full overflow-y-auto scrollbar-thin bg-surface-soft">
@@ -169,6 +202,81 @@ export default function Dashboard({ sessions }: { sessions: Session[] }) {
             </div>
           </div>
         )}
+
+        {/* API 사용량 (ccusage) */}
+        <div className="bg-surface-base rounded-2xl border border-border shadow-card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp size={15} className="text-brand-500" />
+              <h3 className="text-sm font-semibold text-ink-primary">API 사용량</h3>
+              <span className="text-[10px] text-ink-faint">ccusage 연동</span>
+            </div>
+            <button
+              onClick={loadUsage}
+              disabled={usageLoading}
+              className="p-1.5 text-ink-faint hover:text-ink-secondary hover:bg-surface-subtle rounded-lg transition-colors disabled:opacity-40"
+            >
+              {usageLoading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            </button>
+          </div>
+
+          {usageLoading ? (
+            <div className="flex items-center justify-center h-20 text-ink-muted text-sm gap-2">
+              <Loader2 size={14} className="animate-spin" /> 로딩 중...
+            </div>
+          ) : usageError ? (
+            <div className="text-center py-4">
+              <p className="text-xs text-ink-muted mb-1">{usageError}</p>
+              <p className="text-[10px] text-ink-faint">npm install -g ccusage 로 설치하면 비용 추적이 활성화됩니다.</p>
+            </div>
+          ) : usage ? (
+            <>
+              {/* 요약 카드 */}
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="bg-surface-soft rounded-xl p-3">
+                  <p className="text-[10px] text-ink-faint mb-1">오늘</p>
+                  <p className="text-lg font-bold text-ink-primary">${(todayCost ?? 0).toFixed(2)}</p>
+                </div>
+                <div className="bg-surface-soft rounded-xl p-3">
+                  <p className="text-[10px] text-ink-faint mb-1">전체 누적</p>
+                  <p className="text-lg font-bold text-ink-primary">${usage.totalCost.toFixed(2)}</p>
+                </div>
+                <div className="bg-surface-soft rounded-xl p-3">
+                  <p className="text-[10px] text-ink-faint mb-1">전체 토큰</p>
+                  <p className="text-sm font-bold text-ink-primary">{((usage.totalInputTokens + usage.totalOutputTokens) / 1_000_000).toFixed(1)}M</p>
+                </div>
+              </div>
+
+              {/* 일별 비용 차트 (최근 30일) */}
+              {usage.daily.length > 0 && (
+                <ResponsiveContainer width="100%" height={100}>
+                  <LineChart data={usage.daily} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                    <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#9ca3af' }} tickLine={false} axisLine={false}
+                      tickFormatter={d => d.slice(5)} interval={Math.floor(usage.daily.length / 5)} />
+                    <YAxis tick={{ fontSize: 9, fill: '#9ca3af' }} tickLine={false} axisLine={false}
+                      tickFormatter={v => `$${v.toFixed(1)}`} />
+                    <Tooltip
+                      contentStyle={{ background: 'var(--surface-base)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '11px' }}
+                      formatter={(v: number) => [`$${v.toFixed(3)}`, '비용']}
+                    />
+                    <Line type="monotone" dataKey="cost" stroke="#635bff" strokeWidth={1.5} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+
+              {/* 일별 상세 테이블 (최근 7일) */}
+              <div className="mt-3 space-y-1">
+                {usage.daily.slice(-7).reverse().map(d => (
+                  <div key={d.date} className="flex items-center gap-2 text-[11px] py-1 border-b border-border/50 last:border-0">
+                    <span className="text-ink-faint w-20 shrink-0">{d.date.slice(5)}</span>
+                    <span className="text-ink-secondary flex-1">{((d.inputTokens + d.outputTokens) / 1000).toFixed(0)}K 토큰</span>
+                    <span className="text-ink-primary font-medium tabular-nums">${d.cost.toFixed(3)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </div>
 
         {/* 최근 활동 세션 */}
         <div>

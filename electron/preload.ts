@@ -64,6 +64,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // AI 요약
   summarizeSession: (messages: { role: string; content: string }[], provider: string, apiKey: string) =>
     ipcRenderer.invoke('session:summarize', messages, provider, apiKey),
+  // ccusage 사용량
+  loadUsage: () => ipcRenderer.invoke('usage:load'),
   // 파일 감시 이벤트 — 클린업 함수 반환 (누적 등록 방지)
   onSessionsChanged: (callback: () => void) => {
     const handler = () => callback()
