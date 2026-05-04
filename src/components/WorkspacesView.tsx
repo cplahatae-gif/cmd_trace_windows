@@ -22,23 +22,22 @@ export default function WorkspacesView({ workspaces, settings, onDelete, onRenam
     if (!window.electronAPI || resumingId) return
     setResumingId(ws.id)
     setRestoreError(null)
-    const failed: string[] = []
     try {
-      await window.electronAPI.resetPanes()
       const sorted = [...ws.entries].sort((a, b) => a.order - b.order)
-      for (const entry of sorted) {
-        const res = await window.electronAPI.resumeSession(
-          entry.sessionId,
-          entry.projectPath,
-          settings.terminal,
-          settings.bypassPermissions,
-          entry.agentType || 'claude'
-        )
-        if (!res.success) failed.push(entry.title)
-        await new Promise(r => setTimeout(r, 300))
-      }
-      if (failed.length > 0) {
-        setRestoreError(`${failed.length}개 세션 재개 실패: ${failed.slice(0, 2).join(', ')}${failed.length > 2 ? ' 외' : ''}`)
+      const entries = sorted.map(e => ({
+        sessionId: e.sessionId,
+        projectPath: e.projectPath,
+        agentType: e.agentType || 'claude',
+        title: e.title,
+      }))
+      // 단일 wt 호출 — 모든 pane 명령을 체이닝해서 타이밍 경쟁 없이 순서 보장
+      const res = await window.electronAPI.restoreWorkspace(
+        entries,
+        settings.terminal,
+        settings.bypassPermissions
+      )
+      if (!res.success) {
+        setRestoreError(res.error || '워크스페이스 복원 실패')
       }
     } finally {
       setResumingId(null)

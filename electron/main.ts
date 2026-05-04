@@ -66,6 +66,12 @@ function isValidDirectory(dirPath: string): boolean {
   try { return fs.statSync(dirPath).isDirectory() } catch { return false }
 }
 
+// ─── 공통 헬퍼: 프로세스 실행 + 에러 로깅 ─────────────────
+function spawnAndWatch(cmd: string, args: string[], opts: object): void {
+  const proc: ChildProcess = spawn(cmd, args, opts)
+  proc.on('error', (err) => console.error(`[spawn] ${cmd} 오류:`, err))
+}
+
 // ─── 윈도우 생성 ───────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -189,11 +195,6 @@ ipcMain.handle('session:resume', async (_event, sessionId: string, projectPath: 
   const pane = sessionPaneCount
   sessionPaneCount = (sessionPaneCount + 1) % 4
 
-  const spawnAndWatch = (cmd: string, args: string[], opts: object): void => {
-    const proc: ChildProcess = spawn(cmd, args, opts)
-    proc.on('error', (err) => console.error(`[spawn] ${cmd} 오류:`, err))
-  }
-
   switch (terminal) {
     case 'wt':
     case 'powershell': {
@@ -226,6 +227,68 @@ ipcMain.handle('session:resume', async (_event, sessionId: string, projectPath: 
 // ─── IPC: 패널 카운터 리셋 ─────────────────────────────────
 ipcMain.handle('session:resetPanes', () => {
   sessionPaneCount = 0
+  return { success: true }
+})
+
+// ─── IPC: 워크스페이스 일괄 복원 (단일 wt 호출) ─────────────
+// 순차 300ms 딜레이 대신 하나의 wt 명령에 모든 pane을 체이닝.
+// WT가 내부적으로 순서대로 처리하므로 타이밍 경쟁 없음.
+interface WsEntry {
+  sessionId: string
+  projectPath: string
+  agentType: string
+  title: string
+}
+
+ipcMain.handle('workspaces:restoreAll', async (
+  _event,
+  entries: WsEntry[],
+  terminal: string,
+  bypass: boolean
+) => {
+  if (!Array.isArray(entries) || entries.length === 0) return { success: true }
+
+  // 유효한 세션만 필터링
+  const valid = entries.filter(e => typeof e.sessionId === 'string' && sanitizeSessionId(e.sessionId))
+  if (valid.length === 0) return { success: false, error: '유효한 세션이 없습니다.' }
+
+  sessionPaneCount = 0
+
+  const wtArgs: string[] = ['-w', WT_WINDOW]
+
+  for (let i = 0; i < valid.length; i++) {
+    const entry = valid[i]
+    const safeId = sanitizeSessionId(entry.sessionId)!
+    const cli = entry.agentType === 'opencode' ? 'opencode' : 'claude'
+    const cliArgs = (cli === 'claude' && bypass)
+      ? [cli, '-r', safeId, '--dangerously-skip-permissions']
+      : [cli, '-r', safeId]
+    const resumeCmd = cliArgs.join(' ')
+    const validPath = (entry.projectPath && isValidDirectory(entry.projectPath)) ? entry.projectPath : ''
+    const dirArgs = validPath ? ['-d', validPath] : []
+    const shellArgs = terminal === 'powershell'
+      ? ['powershell', '-NoExit', '-Command', resumeCmd]
+      : ['cmd', '/k', resumeCmd]
+    const title = entry.title?.slice(0, 30) || `Session ${i + 1}`
+    const pane = i % 4
+
+    if (i === 0) {
+      wtArgs.push('nt', '--title', title, ...dirArgs, ...shellArgs)
+    } else if (pane === 0) {
+      // 5번째, 9번째... — 새 탭으로 열기
+      wtArgs.push(';', 'nt', '--title', title, ...dirArgs, ...shellArgs)
+    } else if (pane === 1) {
+      wtArgs.push(';', 'sp', '-V', '--title', title, ...dirArgs, ...shellArgs)
+    } else if (pane === 2) {
+      wtArgs.push(';', 'mf', 'left', ';', 'sp', '-H', '--title', title, ...dirArgs, ...shellArgs)
+    } else {
+      wtArgs.push(';', 'mf', 'right', ';', 'sp', '-H', '--title', title, ...dirArgs, ...shellArgs)
+    }
+  }
+
+  spawnAndWatch('wt', wtArgs, { detached: true, shell: false })
+  sessionPaneCount = valid.length % 4
+
   return { success: true }
 })
 

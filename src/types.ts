@@ -169,6 +169,7 @@ declare global {
       // 워크스페이스
       saveWorkspaces: (data: Workspace[]) => Promise<{ success: boolean }>
       loadWorkspaces: () => Promise<Workspace[]>
+      restoreWorkspace: (entries: { sessionId: string; projectPath: string; agentType: string; title: string }[], terminal: string, bypass: boolean) => Promise<{ success: boolean; error?: string }>
       // 컨텐츠 검색 (content:/regex: 연산자)
       searchContent: (query: string, isRegex: boolean, agentType: string) => Promise<string[]>
       // AI 요약

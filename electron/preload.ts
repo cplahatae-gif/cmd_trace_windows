@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('workspaces:save', data),
   loadWorkspaces: () =>
     ipcRenderer.invoke('workspaces:load'),
+  restoreWorkspace: (entries: { sessionId: string; projectPath: string; agentType: string; title: string }[], terminal: string, bypass: boolean) =>
+    ipcRenderer.invoke('workspaces:restoreAll', entries, terminal, bypass),
   // 컨텐츠 검색 (content:/regex: 연산자)
   searchContent: (query: string, isRegex: boolean, agentType: string) =>
     ipcRenderer.invoke('sessions:searchContent', query, isRegex, agentType),
