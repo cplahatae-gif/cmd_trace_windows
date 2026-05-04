@@ -115,6 +115,12 @@ export default function App() {
 
   useEffect(() => { loadSessions() }, [loadSessions])
 
+  // 파일 감시 — 새 세션 JSONL 생성 시 자동 새로고침 (cleanup으로 누적 등록 방지)
+  useEffect(() => {
+    const cleanup = window.electronAPI?.onSessionsChanged?.(() => { loadSessions() })
+    return () => cleanup?.()
+  }, [loadSessions])
+
   // 실행 중인 세션 10초마다 폴링
   useEffect(() => {
     if (!window.electronAPI?.getActiveSessions) return
@@ -163,51 +169,69 @@ export default function App() {
     return { operators, plain }
   }
 
-  // 검색 + 태그 필터 (활성 세션에만 적용) + 검색 연산자
+  // 검색 + 태그 필터 (활성 세션에만 적용) + 검색 연산자 (content:/regex: 비동기)
   useEffect(() => {
-    let result = activeSessions
-    if (selectedTag) result = result.filter(s => s.tags.includes(selectedTag))
+    let cancelled = false
 
-    if (searchQuery.trim()) {
-      const { operators, plain } = parseSearchQuery(searchQuery)
+    ;(async () => {
+      let result = [...activeSessions]
+      if (selectedTag) result = result.filter(s => s.tags.includes(selectedTag))
 
-      if (operators.tag) result = result.filter(s => s.tags.includes(operators.tag))
-      if (operators.project) {
-        const proj = operators.project.toLowerCase()
-        result = result.filter(s => s.project.toLowerCase().includes(proj))
-      }
-      if (operators.is === 'favorited') result = result.filter(s => s.isFavorited)
-      if (operators.is === 'pinned') result = result.filter(s => s.isPinned)
-      if (operators.date) {
-        const target = new Date(operators.date)
-        if (!isNaN(target.getTime())) {
-          result = result.filter(s => {
-            const d = new Date(s.lastActivity)
-            return d.toDateString() === target.toDateString()
-          })
+      if (searchQuery.trim()) {
+        const { operators, plain } = parseSearchQuery(searchQuery)
+
+        // content: / regex: — 비동기 IPC로 JSONL 본문 전체 검색
+        if (operators.content || operators.regex) {
+          const q = operators.content || operators.regex
+          const isRx = !!operators.regex
+          const ids = await window.electronAPI?.searchContent(q, isRx, settings.agentType).catch(() => null)
+          if (cancelled) return
+          if (ids) {
+            const idSet = new Set(ids)
+            result = result.filter(s => idSet.has(s.id))
+          }
+        }
+
+        if (operators.tag) result = result.filter(s => s.tags.includes(operators.tag))
+        if (operators.project) {
+          const proj = operators.project.toLowerCase()
+          result = result.filter(s => s.project.toLowerCase().includes(proj))
+        }
+        if (operators.is === 'favorited') result = result.filter(s => s.isFavorited)
+        if (operators.is === 'pinned') result = result.filter(s => s.isPinned)
+        if (operators.date) {
+          const target = new Date(operators.date)
+          if (!isNaN(target.getTime())) {
+            result = result.filter(s => {
+              const d = new Date(s.lastActivity)
+              return d.toDateString() === target.toDateString()
+            })
+          }
+        }
+
+        if (plain) {
+          const q = plain.toLowerCase()
+          result = result.filter(s =>
+            s.preview.toLowerCase().includes(q) ||
+            s.project.toLowerCase().includes(q) ||
+            (s.customName ?? '').toLowerCase().includes(q) ||
+            s.tags.some(t => t.toLowerCase().includes(q))
+          )
         }
       }
 
-      if (plain) {
-        const q = plain.toLowerCase()
-        result = result.filter(s =>
-          s.preview.toLowerCase().includes(q) ||
-          s.project.toLowerCase().includes(q) ||
-          (s.customName ?? '').toLowerCase().includes(q) ||
-          s.tags.some(t => t.toLowerCase().includes(q))
-        )
-      }
-    }
+      // 핀 우선 정렬
+      result = result.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1
+        if (!a.isPinned && b.isPinned) return 1
+        return 0
+      })
 
-    // 핀 우선 정렬
-    result = [...result].sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1
-      if (!a.isPinned && b.isPinned) return 1
-      return 0
-    })
+      if (!cancelled) setFilteredSessions(result)
+    })()
 
-    setFilteredSessions(result)
-  }, [searchQuery, activeSessions, selectedTag])
+    return () => { cancelled = true }
+  }, [searchQuery, activeSessions, selectedTag, settings.agentType])
 
   // 딥링크 수신 (cmdtrace://project/{id})
   useEffect(() => {
@@ -272,6 +296,34 @@ export default function App() {
 
   const updateSessionMeta = (sessionId: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean }) =>
     applyMetaUpdate(sessionId, updates)
+
+  // 벌크 메타 업데이트 — 선택된 세션 전체에 동일 변경사항 적용 (단일 저장)
+  const bulkApplyMeta = async (ids: Set<string>, updates: { isFavorited?: boolean; isPinned?: boolean }) => {
+    const newMeta = { ...metadata }
+    const updated = sessions.map(s => {
+      if (!ids.has(s.id) || s.isDeleted) return s  // 삭제된 세션 제외
+      newMeta[s.id] = { ...newMeta[s.id], ...updates }
+      return { ...s, ...updates }
+    })
+    setMetadata(newMeta)
+    setSessions(updated)
+    if (selectedSession && ids.has(selectedSession.id)) {
+      setSelectedSession(prev => prev ? { ...prev, ...updates } : prev)
+    }
+    if (window.electronAPI) await window.electronAPI.saveMetadata(newMeta)
+  }
+
+  const bulkPin = async () => {
+    const selected = activeSessions.filter(s => selectedSessionIds.has(s.id))
+    const allPinned = selected.length > 0 && selected.every(s => s.isPinned)
+    await bulkApplyMeta(selectedSessionIds, { isPinned: !allPinned })
+  }
+
+  const bulkFavorite = async () => {
+    const selected = activeSessions.filter(s => selectedSessionIds.has(s.id))
+    const allFavorited = selected.length > 0 && selected.every(s => s.isFavorited)
+    await bulkApplyMeta(selectedSessionIds, { isFavorited: !allFavorited })
+  }
 
   // 소프트 삭제
   const deleteSession = async (sessionId: string) => {
@@ -536,6 +588,8 @@ export default function App() {
             onSaveAsWorkspace={() => setShowSaveWorkspaceModal(true)}
             onClearSelection={() => setSelectedSessionIds(new Set())}
             onSaveActiveAsWorkspace={saveActiveAsWorkspace}
+            onBulkPin={bulkPin}
+            onBulkFavorite={bulkFavorite}
           />
         )}
 

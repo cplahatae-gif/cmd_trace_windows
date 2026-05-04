@@ -18,6 +18,8 @@ interface Props {
   onClearSelection: () => void
   activeSessionIds: Set<string>
   onSaveActiveAsWorkspace: () => void
+  onBulkPin: () => void
+  onBulkFavorite: () => void
 }
 
 export default function SessionList({
@@ -36,6 +38,8 @@ export default function SessionList({
   onClearSelection,
   activeSessionIds,
   onSaveActiveAsWorkspace,
+  onBulkPin,
+  onBulkFavorite,
 }: Props) {
   const grouped = useMemo(() => groupByDate(sessions), [sessions])
 
@@ -81,16 +85,30 @@ export default function SessionList({
 
       {/* 멀티셀렉트 액션바 */}
       {selectedSessionIds.size > 0 && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-brand-50 border-b border-brand-100">
+        <div className="flex items-center gap-1.5 px-3 py-2 bg-brand-50 border-b border-brand-100">
           <span className="text-xs text-brand-700 font-medium flex-1">
             {selectedSessionIds.size}개 선택됨
           </span>
+          <button
+            onClick={onBulkPin}
+            className="flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-ink-secondary bg-white hover:bg-surface-subtle border border-border text-xs rounded-lg transition-colors"
+            title="핀 토글"
+          >
+            <Pin size={11} />
+          </button>
+          <button
+            onClick={onBulkFavorite}
+            className="flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-ink-secondary bg-white hover:bg-surface-subtle border border-border text-xs rounded-lg transition-colors"
+            title="즐겨찾기 토글"
+          >
+            <Star size={11} />
+          </button>
           <button
             onClick={onSaveAsWorkspace}
             className="flex items-center gap-1 px-2.5 py-1 bg-brand-500 text-white text-xs font-semibold rounded-lg hover:bg-brand-600 transition-colors"
           >
             <Layers size={11} />
-            워크스페이스로 저장
+            저장
           </button>
           <button
             onClick={onClearSelection}

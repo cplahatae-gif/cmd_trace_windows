@@ -353,6 +353,91 @@ ipcMain.handle('workspaces:load', async () => {
   }
 })
 
+// ─── IPC: 컨텐츠 검색 (content:/regex: 연산자) ────────────
+const ALLOWED_AGENT_TYPES = new Set(['claude', 'opencode'])
+
+ipcMain.handle('sessions:searchContent', async (_event, query: string, isRegex: boolean, agentType: string) => {
+  if (!query || typeof query !== 'string') return []
+  if (typeof agentType !== 'string' || !ALLOWED_AGENT_TYPES.has(agentType)) return []
+
+  let pattern: RegExp
+  try {
+    pattern = isRegex
+      ? new RegExp(query, 'i')
+      : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+  } catch {
+    return [] // 잘못된 정규식이면 빈 결과
+  }
+
+  const matchingIds: string[] = []
+
+  if (agentType === 'claude') {
+    if (!fs.existsSync(CLAUDE_BASE)) return []
+    let projectDirs: fs.Dirent[]
+    try {
+      projectDirs = fs.readdirSync(CLAUDE_BASE, { withFileTypes: true }).filter(d => d.isDirectory())
+    } catch { return [] }
+
+    let fileCount = 0
+    for (const dir of projectDirs) {
+      const dirPath = path.join(CLAUDE_BASE, dir.name)
+      try {
+        const files = fs.readdirSync(dirPath).filter((f: string) => f.endsWith('.jsonl') && !f.startsWith('agent-'))
+        for (const file of files) {
+          const filePath = path.join(dirPath, file)
+          // P1-2: 경로 순회 방지 — 기존 핸들러와 동일한 보안 패턴 적용
+          if (!validatePathInBase(filePath, CLAUDE_BASE)) continue
+          // P1-4: 이벤트 루프 블로킹 방지 — 10파일마다 양보
+          fileCount++
+          if (fileCount % 10 === 0) await new Promise<void>(resolve => setImmediate(resolve))
+
+          const sessionId = searchJSONLContent(filePath, pattern)
+          if (sessionId) matchingIds.push(`${dir.name}/${sessionId}`)
+        }
+      } catch { /* skip */ }
+    }
+  }
+  // OpenCode는 JSON 파일 구조가 달라 별도 처리 (현재 미지원)
+
+  return matchingIds
+})
+
+// P2-2 수정: boolean 대신 실제 sessionId 반환 (parseClaudeSession과 동일 로직으로 ID 일치 보장)
+function searchJSONLContent(filePath: string, pattern: RegExp): string | null {
+  const fileName = path.basename(filePath, '.jsonl')
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    let actualSessionId: string | null = null
+    let matched = false
+
+    for (const line of content.split('\n')) {
+      if (!line.trim()) continue
+      try {
+        const json = JSON.parse(line)
+        // sessionId 캡처 — parseClaudeSession과 동일하게 덮어쓰기 방식
+        if (json.sessionId) actualSessionId = json.sessionId
+        if (!matched && (json.type === 'user' || json.type === 'assistant')) {
+          const msgObj = json.message
+          if (msgObj) {
+            let text = ''
+            if (typeof msgObj.content === 'string') {
+              text = msgObj.content
+            } else if (Array.isArray(msgObj.content)) {
+              for (const item of msgObj.content) {
+                if (item.type === 'text') text += item.text || ''
+              }
+            }
+            if (text && pattern.test(text)) matched = true
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    if (matched) return actualSessionId || fileName
+  } catch { /* skip */ }
+  return null
+}
+
 // ─── IPC: Obsidian 연동 ────────────────────────────────────
 
 /** Obsidian REST API 요청 헬퍼 (자체서명 인증서 허용) */
@@ -1174,6 +1259,36 @@ if (!gotTheLock) {
   })
 }
 
+// ─── 파일 감시 (새 세션 자동 감지) ───────────────────────
+// Windows 전용 — recursive 옵션은 macOS/Windows만 지원 (Linux 미지원)
+let fileWatcher: fs.FSWatcher | null = null
+
+function setupFileWatcher(win: BrowserWindow) {
+  if (!fs.existsSync(CLAUDE_BASE)) return
+
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  try {
+    fileWatcher = fs.watch(CLAUDE_BASE, { recursive: true }, (_eventType: string, filename: string | null) => {
+      if (!filename || !filename.endsWith('.jsonl')) return
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        if (!win.isDestroyed()) win.webContents.send('sessions:changed')
+      }, 1500) // 1.5s 디바운스 — 여러 파일 동시 변경 시 한 번만 알림
+    })
+  } catch (err) {
+    console.error('[filewatch] 감시 설정 실패:', err)
+  }
+}
+
+// P1-1: 앱 종료 시 watcher 정리 (파일 디스크립터 누수 방지)
+app.on('before-quit', () => {
+  if (fileWatcher) {
+    try { fileWatcher.close() } catch { /* ignore */ }
+    fileWatcher = null
+  }
+})
+
 // ─── 앱 초기화 ─────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow()
@@ -1211,6 +1326,9 @@ app.whenReady().then(() => {
   } catch (err) {
     console.error('Tray 초기화 실패:', err)
   }
+
+  // 파일 감시 시작 — 새 세션 생성 시 renderer에 sessions:changed 전송
+  if (mainWindow) setupFileWatcher(mainWindow)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

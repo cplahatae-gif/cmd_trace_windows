@@ -54,4 +54,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('workspaces:save', data),
   loadWorkspaces: () =>
     ipcRenderer.invoke('workspaces:load'),
+  // 컨텐츠 검색 (content:/regex: 연산자)
+  searchContent: (query: string, isRegex: boolean, agentType: string) =>
+    ipcRenderer.invoke('sessions:searchContent', query, isRegex, agentType),
+  // 파일 감시 이벤트 — 클린업 함수 반환 (누적 등록 방지)
+  onSessionsChanged: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('sessions:changed', handler)
+    return () => ipcRenderer.removeListener('sessions:changed', handler)
+  },
 })

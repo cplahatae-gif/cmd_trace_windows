@@ -163,6 +163,10 @@ declare global {
       // 워크스페이스
       saveWorkspaces: (data: Workspace[]) => Promise<{ success: boolean }>
       loadWorkspaces: () => Promise<Workspace[]>
+      // 컨텐츠 검색 (content:/regex: 연산자)
+      searchContent: (query: string, isRegex: boolean, agentType: string) => Promise<string[]>
+      // 파일 감시 이벤트 — 반환값은 cleanup 함수
+      onSessionsChanged: (callback: () => void) => (() => void)
     }
   }
 }
