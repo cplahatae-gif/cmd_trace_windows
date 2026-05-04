@@ -126,7 +126,7 @@ export interface ObsidianImportCandidate {
 }
 
 export interface AiSummarySettings {
-  provider: 'anthropic' | 'openai'
+  provider: 'anthropic' | 'openai' | 'claude-cli'
   apiKey: string
 }
 

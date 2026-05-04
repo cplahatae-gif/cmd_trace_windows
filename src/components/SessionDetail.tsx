@@ -172,8 +172,9 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
   const handleSummarize = async () => {
     if (!window.electronAPI?.summarizeSession) return
     const aiSummary = settings.aiSummary
-    if (!aiSummary?.apiKey?.trim()) {
-      setSummaryError('설정(⚙️)에서 AI 요약 API 키를 입력하세요.')
+    // claude-cli는 API 키 불필요
+    if (aiSummary?.provider !== 'claude-cli' && !aiSummary?.apiKey?.trim()) {
+      setSummaryError('설정(⚙️)에서 AI 요약 API 키를 입력하거나 Claude Code 방식을 선택하세요.')
       return
     }
     setIsSummarizing(true)

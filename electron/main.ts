@@ -1002,7 +1002,33 @@ ipcMain.handle('session:export', async (_event, content: string, format: string,
 })
 
 // ─── IPC: AI 요약 ──────────────────────────────────────────
-const ALLOWED_PROVIDERS = new Set(['anthropic', 'openai'])
+const ALLOWED_PROVIDERS = new Set(['anthropic', 'openai', 'claude-cli'])
+
+// claude -p 방식 — 기존 Claude Code OAuth 세션 재사용 (API 키 불필요)
+function summarizeViaCLI(transcript: string): Promise<{ ok: boolean; summary?: string; error?: string }> {
+  return new Promise((resolve) => {
+    const prompt = `다음 AI 코딩 세션을 한국어로 3~5개 불릿 포인트로 요약해주세요. 완성된 작업, 핵심 결정, 미해결 이슈 위주로 간결하게 작성하세요:\n\n${transcript}`
+    const proc = spawn('claude', ['-p', '--model', 'claude-haiku-4-5-20251001'], { shell: false })
+    let out = ''
+    let errOut = ''
+    const timer = setTimeout(() => { proc.kill(); resolve({ ok: false, error: 'claude -p 시간 초과 (30s)' }) }, 30000)
+    proc.stdout.on('data', (d: Buffer) => { out += d.toString() })
+    proc.stderr.on('data', (d: Buffer) => { errOut += d.toString() })
+    proc.on('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0 && out.trim()) {
+        resolve({ ok: true, summary: out.trim() })
+      } else {
+        resolve({ ok: false, error: errOut.trim() || `claude -p 종료 코드 ${code}` })
+      }
+    })
+    proc.on('error', (err: Error) => {
+      clearTimeout(timer)
+      resolve({ ok: false, error: `claude CLI를 찾을 수 없습니다: ${err.message}` })
+    })
+    try { proc.stdin.write(prompt); proc.stdin.end() } catch { /* stdin 쓰기 실패 무시 */ }
+  })
+}
 
 ipcMain.handle('session:summarize', async (
   _event,
@@ -1020,16 +1046,19 @@ ipcMain.handle('session:summarize', async (
   if (typeof provider !== 'string' || !ALLOWED_PROVIDERS.has(provider)) {
     return { ok: false, error: '지원하지 않는 AI 제공자입니다.' }
   }
-  if (typeof apiKey !== 'string' || apiKey.trim().length < 20) {
-    return { ok: false, error: 'API 키가 너무 짧습니다.' }
-  }
-  // P2-1: API 키 prefix 검증
-  const trimmedKey = apiKey.trim()
-  if (provider === 'anthropic' && !trimmedKey.startsWith('sk-ant-')) {
-    return { ok: false, error: 'Anthropic API 키 형식이 잘못되었습니다 (sk-ant- 로 시작해야 합니다).' }
-  }
-  if (provider === 'openai' && !trimmedKey.startsWith('sk-')) {
-    return { ok: false, error: 'OpenAI API 키 형식이 잘못되었습니다 (sk- 로 시작해야 합니다).' }
+  // claude-cli는 API 키 불필요 — 이후 처리로 바로 넘김
+  if (provider !== 'claude-cli') {
+    if (typeof apiKey !== 'string' || apiKey.trim().length < 20) {
+      return { ok: false, error: 'API 키가 너무 짧습니다.' }
+    }
+    // P2-1: API 키 prefix 검증
+    const trimmedKey = apiKey.trim()
+    if (provider === 'anthropic' && !trimmedKey.startsWith('sk-ant-')) {
+      return { ok: false, error: 'Anthropic API 키 형식이 잘못되었습니다 (sk-ant- 로 시작해야 합니다).' }
+    }
+    if (provider === 'openai' && !trimmedKey.startsWith('sk-')) {
+      return { ok: false, error: 'OpenAI API 키 형식이 잘못되었습니다 (sk- 로 시작해야 합니다).' }
+    }
   }
 
   // 메시지를 텍스트로 변환 (과도한 컨텍스트 방지 — 최대 6000자)
@@ -1041,6 +1070,9 @@ ipcMain.handle('session:summarize', async (
     transcript += `${role}: ${snippet}\n`
     if (transcript.length > 6000) { transcript += '...'; break }
   }
+
+  // claude -p 방식 — API 키 불필요, Claude Code OAuth 재사용
+  if (provider === 'claude-cli') return summarizeViaCLI(transcript)
 
   const systemPrompt = 'You are a concise technical summarizer. Summarize the AI coding session in Korean. Provide 3-5 bullet points covering: what was accomplished, key technical decisions, and any open issues. Be direct and specific.'
   const userPrompt = `다음 AI 코딩 세션을 한국어로 3~5개 불릿 포인트로 요약해주세요:\n\n${transcript}`

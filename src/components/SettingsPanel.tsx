@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { AppSettings, AgentType, AiSummarySettings, ObsidianSettings, ThemeType } from '../types'
+type AiProvider = AiSummarySettings['provider']
 
 const DEFAULT_AI_SUMMARY: AiSummarySettings = {
-  provider: 'anthropic',
+  provider: 'claude-cli',
   apiKey: '',
 }
 
@@ -266,9 +267,10 @@ export default function SettingsPanel({ settings, onSettingsChange }: {
                 <label className="block text-xs font-medium text-ink-secondary mb-1.5">AI 제공자</label>
                 <div className="space-y-1.5">
                   {([
-                    { value: 'anthropic', label: 'Anthropic (claude-haiku-4-5-20251001)', desc: '추천' },
-                    { value: 'openai', label: 'OpenAI (gpt-4o-mini)', desc: '' },
-                  ] as const).map(opt => (
+                    { value: 'claude-cli', label: 'Claude Code (claude -p)', desc: '추천 · API 키 불필요' },
+                    { value: 'anthropic', label: 'Anthropic API (claude-haiku-4-5)', desc: '' },
+                    { value: 'openai', label: 'OpenAI API (gpt-4o-mini)', desc: '' },
+                  ] as { value: AiProvider; label: string; desc: string }[]).map(opt => (
                     <label key={opt.value} className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-surface-soft transition-colors">
                       <input
                         type="radio"
@@ -286,6 +288,17 @@ export default function SettingsPanel({ settings, onSettingsChange }: {
                   ))}
                 </div>
               </div>
+
+              {/* claude-cli 설명 */}
+              {aiSummary.provider === 'claude-cli' && (
+                <div className="px-3 py-2 bg-surface-soft rounded-lg text-[11px] text-ink-muted leading-relaxed">
+                  Claude Code CLI의 기존 로그인 세션을 사용합니다.<br />
+                  <code className="text-brand-500">claude -p</code> 명령이 설치되어 있어야 합니다.
+                </div>
+              )}
+
+              {/* API 키 — claude-cli 선택 시 숨김 */}
+              {aiSummary.provider !== 'claude-cli' && (
               <div>
                 <label className="block text-xs font-medium text-ink-secondary mb-1">API 키</label>
                 <div className="relative">
@@ -306,6 +319,7 @@ export default function SettingsPanel({ settings, onSettingsChange }: {
                 </div>
                 <p className="text-[10px] text-ink-muted mt-1">세션 상세 화면의 "AI 요약" 버튼에서 사용됩니다. 키는 로컬에만 저장됩니다.</p>
               </div>
+              )}
             </div>
           </div>
 
