@@ -10,6 +10,7 @@ import type { ProjectFormData } from './ProjectModal'
 interface Props {
   session: Session
   settings: AppSettings
+  isActive?: boolean
   onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean }) => Promise<void>
   onDelete: (id: string) => void
   projects?: Project[]
@@ -20,7 +21,7 @@ interface Props {
 
 type Tab = 'messages' | 'insights'
 
-export default function SessionDetail({ session, settings, onUpdateMeta, onDelete, projects, folders, onAssignSession, onCreateProjectFromSession }: Props) {
+export default function SessionDetail({ session, settings, isActive = false, onUpdateMeta, onDelete, projects, folders, onAssignSession, onCreateProjectFromSession }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [insights, setInsights] = useState<SessionInsights | null>(null)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
@@ -201,6 +202,12 @@ export default function SessionDetail({ session, settings, onUpdateMeta, onDelet
             </div>
           ) : (
             <div className="flex items-center gap-2 flex-1 min-w-0">
+              {isActive && (
+                <span className="flex items-center gap-1 px-1.5 py-0.5 bg-green-50 text-green-600 text-[10px] font-semibold rounded-md border border-green-200 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                  실행 중
+                </span>
+              )}
               <h2 className="text-base font-semibold text-ink-primary truncate flex-1 selectable">{displayTitle}</h2>
               <button
                 onClick={() => { setEditName(session.customName || ''); setIsEditingName(true) }}

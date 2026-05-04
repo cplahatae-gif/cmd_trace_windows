@@ -3,12 +3,14 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electronAPI', {
   loadSessions:   (agentType: string) =>
     ipcRenderer.invoke('sessions:load', agentType),
+  getActiveSessions: () =>
+    ipcRenderer.invoke('sessions:getActive'),
   loadMessages:   (projectFolder: string, fileName: string) =>
     ipcRenderer.invoke('session:messages', projectFolder, fileName),
   loadInsights:   (projectFolder: string, fileName: string) =>
     ipcRenderer.invoke('session:insights', projectFolder, fileName),
-  resumeSession:  (sessionId: string, projectPath: string, terminal: string, bypass: boolean) =>
-    ipcRenderer.invoke('session:resume', sessionId, projectPath, terminal, bypass),
+  resumeSession:  (sessionId: string, projectPath: string, terminal: string, bypass: boolean, agentType?: string) =>
+    ipcRenderer.invoke('session:resume', sessionId, projectPath, terminal, bypass, agentType),
   openFolder:     (folderPath: string) =>
     ipcRenderer.invoke('shell:openFolder', folderPath),
   resetPanes:     () =>
@@ -47,4 +49,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onDeepLink: (callback: (url: string) => void) => {
     ipcRenderer.on('deeplink:navigate', (_event, url: string) => callback(url))
   },
+  // 워크스페이스
+  saveWorkspaces: (data: Record<string, unknown>[]) =>
+    ipcRenderer.invoke('workspaces:save', data),
+  loadWorkspaces: () =>
+    ipcRenderer.invoke('workspaces:load'),
 })

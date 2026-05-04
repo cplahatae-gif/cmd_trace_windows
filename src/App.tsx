@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import type { Session, AppSettings, Project, ProjectStatus } from './types'
+import type { Session, AppSettings, Project, ProjectStatus, Workspace, WorkspaceEntry } from './types'
 import Sidebar from './components/Sidebar'
 import SessionList from './components/SessionList'
 import SessionDetail from './components/SessionDetail'
@@ -9,6 +9,8 @@ import SettingsPanel from './components/SettingsPanel'
 import TrashView from './components/TrashView'
 import ProjectsView from './components/ProjectsView'
 import ProjectDetailView from './components/ProjectDetailView'
+import WorkspacesView from './components/WorkspacesView'
+import WorkspaceModal from './components/WorkspaceModal'
 import type { ProjectFormData } from './components/ProjectModal'
 import { formatDistanceToNow } from 'date-fns'
 import { ko } from 'date-fns/locale'
@@ -26,7 +28,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
 }
 
-type ActiveView = 'sessions' | 'dashboard' | 'projects' | 'settings' | 'trash'
+type ActiveView = 'sessions' | 'dashboard' | 'projects' | 'workspaces' | 'settings' | 'trash'
 
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([])
@@ -41,6 +43,10 @@ export default function App() {
   const [metadata, setMetadata] = useState<Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string }>>({})
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set())
+  const [showSaveWorkspaceModal, setShowSaveWorkspaceModal] = useState(false)
+  const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set())
 
   // 테마 적용 — settings.theme 변경 시 .dark 클래스 토글
   useEffect(() => {
@@ -74,6 +80,9 @@ export default function App() {
         setProjects(normalized)
       }
     }).catch(() => {})
+    window.electronAPI.loadWorkspaces().then(saved => {
+      if (Array.isArray(saved)) setWorkspaces(saved as Workspace[])
+    }).catch(() => {})
   }, [])
 
   // 세션 로드 (I-1: catch 블록 추가)
@@ -105,6 +114,18 @@ export default function App() {
   }, [settings.agentType])
 
   useEffect(() => { loadSessions() }, [loadSessions])
+
+  // 실행 중인 세션 10초마다 폴링
+  useEffect(() => {
+    if (!window.electronAPI?.getActiveSessions) return
+    const poll = async () => {
+      const ids = await window.electronAPI.getActiveSessions().catch(() => [])
+      setActiveSessionIds(new Set(ids))
+    }
+    poll()
+    const timer = setInterval(poll, 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   // 삭제되지 않은 세션만 표시
   const activeSessions = useMemo(() => sessions.filter(s => !s.isDeleted), [sessions])
@@ -256,6 +277,12 @@ export default function App() {
   const deleteSession = async (sessionId: string) => {
     await applyMetaUpdate(sessionId, { isDeleted: true })
     if (selectedSession?.id === sessionId) setSelectedSession(null)
+    setSelectedSessionIds(prev => {
+      if (!prev.has(sessionId)) return prev
+      const next = new Set(prev)
+      next.delete(sessionId)
+      return next
+    })
   }
 
   // 복원
@@ -270,6 +297,57 @@ export default function App() {
       await window.electronAPI.saveProjects(updated)
     }
   }, [])
+
+  // ─── 워크스페이스 관리 ─────────────────────────────────
+  const saveWorkspaces = useCallback(async (updated: Workspace[]) => {
+    setWorkspaces(updated)
+    if (window.electronAPI) {
+      await window.electronAPI.saveWorkspaces(updated)
+    }
+  }, [])
+
+  const createWorkspace = async (name: string) => {
+    // filteredSessions 대신 activeSessions 사용: 검색 중에도 선택된 모든 세션 포함
+    const selected = activeSessions.filter(s => selectedSessionIds.has(s.id))
+    if (selected.length === 0) return
+    const entries: WorkspaceEntry[] = selected.map((s, i) => ({
+      sessionId: s.sessionId,
+      sessionRecordId: s.id,
+      projectPath: s.project,
+      title: s.customName || s.preview.slice(0, 60) || s.sessionId,
+      order: i + 1,
+      agentType: settings.agentType,
+    }))
+    const ws: Workspace = {
+      id: `ws_${Date.now()}`,
+      name: name.trim(),
+      createdAt: new Date().toISOString(),
+      entries,
+    }
+    await saveWorkspaces([...workspaces, ws])
+    setSelectedSessionIds(new Set())
+    setShowSaveWorkspaceModal(false)
+  }
+
+  const saveActiveAsWorkspace = useCallback(() => {
+    // 현재 실행 중인 세션(초록 점)만 자동 선택 후 저장 모달 열기
+    const activeIds = new Set(
+      activeSessions
+        .filter(s => activeSessionIds.has(s.sessionId))
+        .map(s => s.id)
+    )
+    if (activeIds.size === 0) return
+    setSelectedSessionIds(activeIds)
+    setShowSaveWorkspaceModal(true)
+  }, [activeSessions, activeSessionIds])
+
+  const deleteWorkspace = useCallback(async (id: string) => {
+    await saveWorkspaces(workspaces.filter(w => w.id !== id))
+  }, [workspaces, saveWorkspaces])
+
+  const renameWorkspace = useCallback(async (id: string, name: string) => {
+    await saveWorkspaces(workspaces.map(w => w.id === id ? { ...w, name: name.trim() } : w))
+  }, [workspaces, saveWorkspaces])
 
   // Obsidian 노트 동기화 헬퍼 (autoSync 켜져 있을 때만, 실패는 조용히 무시)
   // stale closure 방지: setProjects를 functional form으로 호출해 최신 상태를 기준으로 머지.
@@ -432,6 +510,7 @@ export default function App() {
           onTagSelect={setSelectedTag}
           sessionCount={activeSessions.length}
           trashCount={deletedSessions.length}
+          workspaceCount={workspaces.length}
         />
 
         {activeView === 'sessions' && (
@@ -447,6 +526,16 @@ export default function App() {
             formatRelativeTime={(date: string) =>
               formatDistanceToNow(new Date(date), { addSuffix: true, locale: ko })
             }
+            activeSessionIds={activeSessionIds}
+            selectedSessionIds={selectedSessionIds}
+            onToggleSelect={(id) => setSelectedSessionIds(prev => {
+              const next = new Set(prev)
+              next.has(id) ? next.delete(id) : next.add(id)
+              return next
+            })}
+            onSaveAsWorkspace={() => setShowSaveWorkspaceModal(true)}
+            onClearSelection={() => setSelectedSessionIds(new Set())}
+            onSaveActiveAsWorkspace={saveActiveAsWorkspace}
           />
         )}
 
@@ -455,6 +544,7 @@ export default function App() {
             <SessionDetail
               session={sessionsWithAutoProject.find(s => s.id === selectedSession.id) ?? selectedSession}
               settings={settings}
+              isActive={activeSessionIds.has(selectedSession.sessionId)}
               onUpdateMeta={updateSessionMeta}
               onDelete={deleteSession}
               projects={projects}
@@ -491,6 +581,13 @@ export default function App() {
               onImportFromObsidian={importProjectsFromObsidian}
             />
             )
+          ) : activeView === 'workspaces' ? (
+            <WorkspacesView
+              workspaces={workspaces}
+              settings={settings}
+              onDelete={deleteWorkspace}
+              onRename={renameWorkspace}
+            />
           ) : activeView === 'trash' ? (
             <TrashView
               sessions={deletedSessions}
@@ -501,6 +598,14 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {showSaveWorkspaceModal && (
+        <WorkspaceModal
+          sessionCount={selectedSessionIds.size}
+          onSave={createWorkspace}
+          onClose={() => setShowSaveWorkspaceModal(false)}
+        />
+      )}
     </div>
   )
 }
