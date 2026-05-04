@@ -84,7 +84,7 @@ function DiffPanel({ messages, accent }: { messages: Message[]; accent: 'brand' 
         const bubbleCls = isUser ? userBg : msg.isToolUse ? toolBg : aiBg
 
         return (
-          <div key={idx} className={`flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+          <div key={`${msg.timestamp ?? ''}-${idx}`} className={`flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
             {/* 아바타 */}
             <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5 ${
               isUser ? avatarUser : msg.isToolUse ? 'bg-amber-100 text-amber-700' : 'bg-surface-subtle text-ink-secondary border border-border'

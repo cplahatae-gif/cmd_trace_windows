@@ -100,7 +100,7 @@ export default function MessageView({ messages }: Props) {
   return (
     <div className="h-full overflow-y-auto scrollbar-thin px-5 py-5 space-y-4 selectable">
       {messages.map((msg, idx) => (
-        <MessageBubble key={idx} message={msg} />
+        <MessageBubble key={`${msg.timestamp ?? ''}-${idx}`} message={msg} />
       ))}
       <div ref={bottomRef} />
     </div>

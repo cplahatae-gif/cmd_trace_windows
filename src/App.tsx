@@ -233,9 +233,9 @@ export default function App() {
     return () => { cancelled = true }
   }, [searchQuery, activeSessions, selectedTag, settings.agentType])
 
-  // 딥링크 수신 (cmdtrace://project/{id})
+  // 딥링크 수신 (cmdtrace://project/{id}) — cleanup으로 누적 등록 방지
   useEffect(() => {
-    window.electronAPI?.onDeepLink?.((url: string) => {
+    const cleanup = window.electronAPI?.onDeepLink?.((url: string) => {
       const projectMatch = url.match(/cmdtrace:\/\/project\/(.+)/)
       if (projectMatch) {
         const projectId = decodeURIComponent(projectMatch[1])
@@ -252,6 +252,7 @@ export default function App() {
         }
       }
     })
+    return () => cleanup?.()
   }, [sessions])
 
   // 뷰 전환 시 프로젝트 상세 초기화

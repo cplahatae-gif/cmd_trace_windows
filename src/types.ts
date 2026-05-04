@@ -164,8 +164,8 @@ declare global {
       upsertObsidianProjectNote: (payload: UpsertProjectNotePayload) => Promise<{ ok: boolean; path?: string; error?: string }>
       scanObsidianImportCandidates: () => Promise<{ ok: boolean; candidates?: ObsidianImportCandidate[]; error?: string }>
       backfillObsidianCmdtraceId: (notePath: string, projectId: string) => Promise<{ ok: boolean; error?: string }>
-      // 딥링크
-      onDeepLink: (callback: (url: string) => void) => void
+      // 딥링크 — cleanup 함수 반환
+      onDeepLink: (callback: (url: string) => void) => (() => void)
       // 워크스페이스
       saveWorkspaces: (data: Workspace[]) => Promise<{ success: boolean }>
       loadWorkspaces: () => Promise<Workspace[]>

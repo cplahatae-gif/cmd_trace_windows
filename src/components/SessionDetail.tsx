@@ -34,6 +34,7 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
   const [editName, setEditName] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [isResuming, setIsResuming] = useState(false)
+  const [resumeError, setResumeError] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [messageError, setMessageError] = useState<string | null>(null)
   const [insightError, setInsightError] = useState<string | null>(null)
@@ -72,6 +73,7 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
     setInsightError(null)
     setSummary(null)
     setSummaryError(null)
+    setResumeError(null)
     setDiffSession(null)
     setDiffMessages([])
     setShowDiffPicker(false)
@@ -101,13 +103,15 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
   const handleResume = async () => {
     if (!window.electronAPI) return
     setIsResuming(true)
+    setResumeError(null)
     try {
-      await window.electronAPI.resumeSession(
+      const res = await window.electronAPI.resumeSession(
         session.sessionId,
         session.project,
         settings.terminal,
         settings.bypassPermissions
       )
+      if (!res.success) setResumeError(res.error || '세션 재개 실패')
     } finally {
       setTimeout(() => setIsResuming(false), 1000)
     }
@@ -313,14 +317,19 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
 
         {/* 액션 버튼 */}
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={handleResume}
-            disabled={isResuming}
-            className="btn-primary"
-          >
-            {isResuming ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-            세션 재개
-          </button>
+          <div className="flex flex-col items-start gap-0.5">
+            <button
+              onClick={handleResume}
+              disabled={isResuming}
+              className="btn-primary"
+            >
+              {isResuming ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+              세션 재개
+            </button>
+            {resumeError && (
+              <span className="text-[10px] text-red-500">{resumeError}</span>
+            )}
+          </div>
           <button onClick={handleOpenFolder} className="btn-secondary">
             <FolderOpen size={12} />
             폴더

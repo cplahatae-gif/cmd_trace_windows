@@ -45,9 +45,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('obsidian:scanImportCandidates'),
   backfillObsidianCmdtraceId: (notePath: string, projectId: string) =>
     ipcRenderer.invoke('obsidian:backfillCmdtraceId', notePath, projectId),
-  // 딥링크 수신
+  // 딥링크 수신 — cleanup 함수 반환 (누적 등록 방지)
   onDeepLink: (callback: (url: string) => void) => {
-    ipcRenderer.on('deeplink:navigate', (_event, url: string) => callback(url))
+    const handler = (_event: Electron.IpcRendererEvent, url: string) => callback(url)
+    ipcRenderer.on('deeplink:navigate', handler)
+    return () => ipcRenderer.removeListener('deeplink:navigate', handler)
   },
   // 워크스페이스
   saveWorkspaces: (data: Record<string, unknown>[]) =>

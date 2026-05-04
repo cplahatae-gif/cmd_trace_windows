@@ -213,9 +213,9 @@ ipcMain.handle('session:resume', async (_event, sessionId: string, projectPath: 
     }
     case 'cmd':
     default: {
-      // shell: false 사용, start /d 로 작업 디렉토리 지정
-      const startArgs = projectPath
-        ? ['/c', 'start', '/d', projectPath, 'cmd', '/k', resumeCmd]
+      // P3-2 수정: validProjectPath 사용 (검증된 경로만 -d 인수로 전달)
+      const startArgs = validProjectPath
+        ? ['/c', 'start', '/d', validProjectPath, 'cmd', '/k', resumeCmd]
         : ['/c', 'start', 'cmd', '/k', resumeCmd]
       spawnAndWatch('cmd', startArgs, { detached: true, shell: false })
       break
@@ -286,7 +286,22 @@ ipcMain.handle('workspaces:restoreAll', async (
     }
   }
 
-  spawnAndWatch('wt', wtArgs, { detached: true, shell: false })
+  if (terminal === 'wt' || terminal === 'powershell') {
+    spawnAndWatch('wt', wtArgs, { detached: true, shell: false })
+  } else {
+    // cmd 터미널: 각 세션을 별도 창으로 순차 실행 (wt 체이닝 불가)
+    for (const entry of valid) {
+      const safeId = sanitizeSessionId(entry.sessionId)!
+      const cli = entry.agentType === 'opencode' ? 'opencode' : 'claude'
+      const cliArgs = (cli === 'claude' && bypass) ? [cli, '-r', safeId, '--dangerously-skip-permissions'] : [cli, '-r', safeId]
+      const resumeCmd = cliArgs.join(' ')
+      const validPath = (entry.projectPath && isValidDirectory(entry.projectPath)) ? entry.projectPath : ''
+      const startArgs = validPath
+        ? ['/c', 'start', '/d', validPath, 'cmd', '/k', resumeCmd]
+        : ['/c', 'start', 'cmd', '/k', resumeCmd]
+      spawnAndWatch('cmd', startArgs, { detached: true, shell: false })
+    }
+  }
   sessionPaneCount = valid.length % 4
 
   return { success: true }
@@ -711,7 +726,6 @@ function buildFrontmatter(existing: string | null, payload: UpsertPayload): stri
   const lines = body.split('\n')
   const out: string[] = []
   const seen = new Set<string>()
-  let inMultilineValue = false
 
   for (const line of lines) {
     // 들여쓴 라인(리스트 항목 등)은 그대로 유지
@@ -719,7 +733,6 @@ function buildFrontmatter(existing: string | null, payload: UpsertPayload): stri
       out.push(line)
       continue
     }
-    inMultilineValue = false
     // 키 추출 — 키에 공백 허용 ("date modified")
     const m = line.match(/^([\w][\w -]*?):\s*(.*)$/)
     if (!m) {
@@ -727,16 +740,12 @@ function buildFrontmatter(existing: string | null, payload: UpsertPayload): stri
       continue
     }
     const key = m[1]
-    const value = m[2]
     if (managed[key] !== undefined) {
       out.push(`${key}: ${managed[key]}`)
       seen.add(key)
     } else {
       out.push(line)
-      // 값이 비어있으면 뒤따르는 리스트/블록 항목을 보존하기 위한 마커
-      if (value === '') inMultilineValue = true
     }
-    void inMultilineValue
   }
 
   // 누락된 관리 필드 추가 (기존 노트에 cmdtrace_* 가 아직 없는 경우 최초 동기화)
