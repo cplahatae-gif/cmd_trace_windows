@@ -300,6 +300,8 @@ export default function App() {
 
   // 벌크 메타 업데이트 — 선택된 세션 전체에 동일 변경사항 적용 (단일 저장)
   const bulkApplyMeta = async (ids: Set<string>, updates: { isFavorited?: boolean; isPinned?: boolean }) => {
+    const prevMeta = metadata
+    const prevSessions = sessions
     const newMeta = { ...metadata }
     const updated = sessions.map(s => {
       if (!ids.has(s.id) || s.isDeleted) return s  // 삭제된 세션 제외
@@ -311,7 +313,15 @@ export default function App() {
     if (selectedSession && ids.has(selectedSession.id)) {
       setSelectedSession(prev => prev ? { ...prev, ...updates } : prev)
     }
-    if (window.electronAPI) await window.electronAPI.saveMetadata(newMeta)
+    if (window.electronAPI) {
+      const res = await window.electronAPI.saveMetadata(newMeta).catch(() => ({ success: false }))
+      if (!res.success) {
+        // 저장 실패 시 이전 상태로 롤백
+        setMetadata(prevMeta)
+        setSessions(prevSessions)
+        setError('메타데이터 저장에 실패했습니다.')
+      }
+    }
   }
 
   const bulkPin = async () => {

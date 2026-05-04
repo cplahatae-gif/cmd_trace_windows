@@ -198,9 +198,15 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
     setShowDiffPicker(false)
     setDiffSession(target)
     setIsDiffLoading(true)
+    // 연속 클릭 시 stale 응답 무시 — 선택 시점의 ID 캡처
+    const selectedId = target.id
     try {
       const msgs = await window.electronAPI?.loadMessages(target.projectFolder, target.fileName) ?? []
-      setDiffMessages(msgs)
+      setDiffSession(prev => {
+        if (prev?.id !== selectedId) return prev // 이미 다른 세션 선택됨
+        setDiffMessages(msgs)
+        return prev
+      })
     } catch {
       setDiffMessages([])
     } finally {

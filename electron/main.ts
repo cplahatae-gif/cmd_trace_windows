@@ -438,6 +438,13 @@ ipcMain.handle('sessions:searchContent', async (_event, query: string, isRegex: 
   if (!query || typeof query !== 'string') return []
   if (typeof agentType !== 'string' || !ALLOWED_AGENT_TYPES.has(agentType)) return []
 
+  // P1 ReDoS 방지: regex 입력 길이 제한 + 위험 패턴 차단
+  if (isRegex) {
+    if (query.length > 200) return []
+    // 카타스트로픽 백트래킹 유발 패턴 거부 (중첩 수량사 등)
+    if (/(\(.*[+*]\))[+*?]|(\.\*){3,}|\(\?.*\)\+/.test(query)) return []
+  }
+
   let pattern: RegExp
   try {
     pattern = isRegex
@@ -1472,32 +1479,41 @@ if (!gotTheLock) {
 
 // ─── 파일 감시 (새 세션 자동 감지) ───────────────────────
 // Windows 전용 — recursive 옵션은 macOS/Windows만 지원 (Linux 미지원)
-let fileWatcher: fs.FSWatcher | null = null
+const fileWatchers: fs.FSWatcher[] = []
+
+function watchDir(dirPath: string, win: BrowserWindow, debounceTimer: { ref: ReturnType<typeof setTimeout> | null }) {
+  if (!fs.existsSync(dirPath)) return
+  try {
+    const watcher = fs.watch(dirPath, { recursive: true }, (_eventType: string, filename: string | null) => {
+      if (!filename) return
+      // Claude: .jsonl 파일, OpenCode: .json 파일
+      if (!filename.endsWith('.jsonl') && !filename.endsWith('.json')) return
+      if (debounceTimer.ref) clearTimeout(debounceTimer.ref)
+      debounceTimer.ref = setTimeout(() => {
+        if (!win.isDestroyed()) win.webContents.send('sessions:changed')
+      }, 1500)
+    })
+    fileWatchers.push(watcher)
+  } catch (err) {
+    console.error('[filewatch] 감시 설정 실패:', dirPath, err)
+  }
+}
 
 function setupFileWatcher(win: BrowserWindow) {
-  if (!fs.existsSync(CLAUDE_BASE)) return
-
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
-
-  try {
-    fileWatcher = fs.watch(CLAUDE_BASE, { recursive: true }, (_eventType: string, filename: string | null) => {
-      if (!filename || !filename.endsWith('.jsonl')) return
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => {
-        if (!win.isDestroyed()) win.webContents.send('sessions:changed')
-      }, 1500) // 1.5s 디바운스 — 여러 파일 동시 변경 시 한 번만 알림
-    })
-  } catch (err) {
-    console.error('[filewatch] 감시 설정 실패:', err)
-  }
+  const debounceTimer = { ref: null as ReturnType<typeof setTimeout> | null }
+  // Claude Code 세션 감시
+  watchDir(CLAUDE_BASE, win, debounceTimer)
+  // OpenCode 세션 감시
+  const openCodeBase = path.join(os.homedir(), '.local', 'share', 'opencode', 'storage', 'message')
+  watchDir(openCodeBase, win, debounceTimer)
 }
 
 // P1-1: 앱 종료 시 watcher 정리 (파일 디스크립터 누수 방지)
 app.on('before-quit', () => {
-  if (fileWatcher) {
-    try { fileWatcher.close() } catch { /* ignore */ }
-    fileWatcher = null
+  for (const w of fileWatchers) {
+    try { w.close() } catch { /* ignore */ }
   }
+  fileWatchers.length = 0
 })
 
 // ─── 앱 초기화 ─────────────────────────────────────────────
