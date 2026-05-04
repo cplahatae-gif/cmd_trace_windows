@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download, FolderPlus, ChevronDown, ExternalLink, Sparkles } from 'lucide-react'
+import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download, FolderPlus, ChevronDown, ExternalLink, Sparkles, GitCompare } from 'lucide-react'
 import type { Session, Message, SessionInsights, AppSettings, ExportFormat, Project } from '../types'
 import { PROJECT_COLORS } from '../types'
 import MessageView from './MessageView'
 import InsightsView from './InsightsView'
 import ProjectModal from './ProjectModal'
 import type { ProjectFormData } from './ProjectModal'
+import DiffPickerModal from './DiffPickerModal'
+import SessionDiffView from './SessionDiffView'
 
 interface Props {
   session: Session
+  allSessions?: Session[]
   settings: AppSettings
   isActive?: boolean
   onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean }) => Promise<void>
@@ -21,7 +24,7 @@ interface Props {
 
 type Tab = 'messages' | 'insights'
 
-export default function SessionDetail({ session, settings, isActive = false, onUpdateMeta, onDelete, projects, folders, onAssignSession, onCreateProjectFromSession }: Props) {
+export default function SessionDetail({ session, allSessions = [], settings, isActive = false, onUpdateMeta, onDelete, projects, folders, onAssignSession, onCreateProjectFromSession }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [insights, setInsights] = useState<SessionInsights | null>(null)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
@@ -41,6 +44,10 @@ export default function SessionDetail({ session, settings, isActive = false, onU
   const [summary, setSummary] = useState<string | null>(null)
   const [isSummarizing, setIsSummarizing] = useState(false)
   const [summaryError, setSummaryError] = useState<string | null>(null)
+  const [showDiffPicker, setShowDiffPicker] = useState(false)
+  const [diffSession, setDiffSession] = useState<Session | null>(null)
+  const [diffMessages, setDiffMessages] = useState<Message[]>([])
+  const [isDiffLoading, setIsDiffLoading] = useState(false)
 
   const loadMessages = useCallback(async () => {
     if (!window.electronAPI) return
@@ -65,6 +72,9 @@ export default function SessionDetail({ session, settings, isActive = false, onU
     setInsightError(null)
     setSummary(null)
     setSummaryError(null)
+    setDiffSession(null)
+    setDiffMessages([])
+    setShowDiffPicker(false)
     loadMessages()
   }, [session.id, loadMessages])
 
@@ -177,6 +187,20 @@ export default function SessionDetail({ session, settings, isActive = false, onU
       setSummaryError(String(err))
     } finally {
       setIsSummarizing(false)
+    }
+  }
+
+  const handleSelectDiff = async (target: Session) => {
+    setShowDiffPicker(false)
+    setDiffSession(target)
+    setIsDiffLoading(true)
+    try {
+      const msgs = await window.electronAPI?.loadMessages(target.projectFolder, target.fileName) ?? []
+      setDiffMessages(msgs)
+    } catch {
+      setDiffMessages([])
+    } finally {
+      setIsDiffLoading(false)
     }
   }
 
@@ -407,6 +431,18 @@ export default function SessionDetail({ session, settings, isActive = false, onU
             AI 요약
           </button>
 
+          {/* 세션 비교 */}
+          {allSessions.length > 1 && (
+            <button
+              onClick={() => setShowDiffPicker(v => !v)}
+              title="다른 세션과 비교"
+              className={`btn-secondary ${diffSession ? 'text-green-600 border-green-300 bg-green-50 hover:bg-green-100' : ''}`}
+            >
+              <GitCompare size={12} />
+              {diffSession ? '비교 중' : '비교'}
+            </button>
+          )}
+
           {/* 내보내기 */}
           <div className="relative">
             <button
@@ -506,8 +542,28 @@ export default function SessionDetail({ session, settings, isActive = false, onU
         </div>
       )}
 
-      {/* 콘텐츠 */}
-      <div className="flex-1 overflow-hidden bg-surface-soft">
+      {/* 세션 비교 뷰 — diffSession이 설정되면 탭 콘텐츠 대신 표시 */}
+      {diffSession && (
+        isDiffLoading ? (
+          <div className="flex-1 flex items-center justify-center text-ink-muted">
+            <Loader2 size={18} className="animate-spin mr-2" />
+            <span className="text-sm">비교 세션 로딩 중...</span>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-hidden">
+            <SessionDiffView
+              sessionA={session}
+              sessionB={diffSession}
+              messagesA={messages}
+              messagesB={diffMessages}
+              onClose={() => { setDiffSession(null); setDiffMessages([]) }}
+            />
+          </div>
+        )
+      )}
+
+      {/* 콘텐츠 (비교 모드가 아닐 때) */}
+      {!diffSession && <div className="flex-1 overflow-hidden bg-surface-soft">
         {activeTab === 'messages' ? (
           isLoadingMessages ? (
             <div className="flex items-center justify-center h-full text-ink-muted">
@@ -538,7 +594,17 @@ export default function SessionDetail({ session, settings, isActive = false, onU
             <InsightsView insights={insights} />
           ) : null
         )}
-      </div>
+      </div>}
+
+      {/* 비교 세션 선택 모달 */}
+      {showDiffPicker && (
+        <DiffPickerModal
+          currentSession={session}
+          allSessions={allSessions}
+          onSelect={handleSelectDiff}
+          onClose={() => setShowDiffPicker(false)}
+        />
+      )}
 
       {/* 새 프로젝트 생성 모달 (세션 정보 자동 채움) */}
       {showNewProjectModal && (

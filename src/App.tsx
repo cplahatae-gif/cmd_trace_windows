@@ -597,6 +597,7 @@ export default function App() {
           {activeView === 'sessions' && selectedSession ? (
             <SessionDetail
               session={sessionsWithAutoProject.find(s => s.id === selectedSession.id) ?? selectedSession}
+              allSessions={activeSessions}
               settings={settings}
               isActive={activeSessionIds.has(selectedSession.sessionId)}
               onUpdateMeta={updateSessionMeta}
