@@ -125,12 +125,18 @@ export interface ObsidianImportCandidate {
   hasCmdtraceId: boolean
 }
 
+export interface AiSummarySettings {
+  provider: 'anthropic' | 'openai'
+  apiKey: string
+}
+
 export interface AppSettings {
   terminal: TerminalType
   theme: ThemeType
   bypassPermissions: boolean
   agentType: AgentType
   obsidian?: ObsidianSettings
+  aiSummary?: AiSummarySettings
 }
 
 // ─── Electron API 타입 ────────────────────────────────────
@@ -165,6 +171,8 @@ declare global {
       loadWorkspaces: () => Promise<Workspace[]>
       // 컨텐츠 검색 (content:/regex: 연산자)
       searchContent: (query: string, isRegex: boolean, agentType: string) => Promise<string[]>
+      // AI 요약
+      summarizeSession: (messages: { role: string; content: string }[], provider: string, apiKey: string) => Promise<{ ok: boolean; summary?: string; error?: string }>
       // 파일 감시 이벤트 — 반환값은 cleanup 함수
       onSessionsChanged: (callback: () => void) => (() => void)
     }

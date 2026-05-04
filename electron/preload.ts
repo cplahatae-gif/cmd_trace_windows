@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 컨텐츠 검색 (content:/regex: 연산자)
   searchContent: (query: string, isRegex: boolean, agentType: string) =>
     ipcRenderer.invoke('sessions:searchContent', query, isRegex, agentType),
+  // AI 요약
+  summarizeSession: (messages: { role: string; content: string }[], provider: string, apiKey: string) =>
+    ipcRenderer.invoke('session:summarize', messages, provider, apiKey),
   // 파일 감시 이벤트 — 클린업 함수 반환 (누적 등록 방지)
   onSessionsChanged: (callback: () => void) => {
     const handler = () => callback()

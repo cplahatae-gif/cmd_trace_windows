@@ -1,5 +1,10 @@
 import { useState } from 'react'
-import type { AppSettings, AgentType, ObsidianSettings, ThemeType } from '../types'
+import type { AppSettings, AgentType, AiSummarySettings, ObsidianSettings, ThemeType } from '../types'
+
+const DEFAULT_AI_SUMMARY: AiSummarySettings = {
+  provider: 'anthropic',
+  apiKey: '',
+}
 
 const DEFAULT_OBSIDIAN: ObsidianSettings = {
   enabled: false,
@@ -14,8 +19,14 @@ export default function SettingsPanel({ settings, onSettingsChange }: {
   onSettingsChange: (s: AppSettings) => void
 }) {
   const obsidian = settings.obsidian ?? DEFAULT_OBSIDIAN
+  const aiSummary = settings.aiSummary ?? DEFAULT_AI_SUMMARY
   const [showToken, setShowToken] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(false)
   const [testStatus, setTestStatus] = useState<{ kind: 'idle' | 'testing' | 'ok' | 'error'; message?: string }>({ kind: 'idle' })
+
+  const updateAiSummary = (patch: Partial<AiSummarySettings>) => {
+    onSettingsChange({ ...settings, aiSummary: { ...aiSummary, ...patch } })
+  }
 
   const updateObsidian = (patch: Partial<ObsidianSettings>) => {
     onSettingsChange({ ...settings, obsidian: { ...obsidian, ...patch } })
@@ -246,6 +257,58 @@ export default function SettingsPanel({ settings, onSettingsChange }: {
               </div>
             )}
           </div>
+
+          {/* AI 요약 설정 */}
+          <div className="bg-surface-base rounded-xl border border-border p-4 shadow-card">
+            <h3 className="text-sm font-semibold text-ink-primary mb-3">AI 요약</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-ink-secondary mb-1.5">AI 제공자</label>
+                <div className="space-y-1.5">
+                  {([
+                    { value: 'anthropic', label: 'Anthropic (claude-haiku-4-5-20251001)', desc: '추천' },
+                    { value: 'openai', label: 'OpenAI (gpt-4o-mini)', desc: '' },
+                  ] as const).map(opt => (
+                    <label key={opt.value} className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-surface-soft transition-colors">
+                      <input
+                        type="radio"
+                        name="aiProvider"
+                        value={opt.value}
+                        checked={aiSummary.provider === opt.value}
+                        onChange={() => updateAiSummary({ provider: opt.value })}
+                        className="accent-brand-500"
+                      />
+                      <span className="text-sm text-ink-primary">
+                        {opt.label}
+                        {opt.desc && <span className="ml-1.5 text-[10px] font-semibold text-brand-500 bg-brand-50 px-1.5 py-0.5 rounded-full">{opt.desc}</span>}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink-secondary mb-1">API 키</label>
+                <div className="relative">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    value={aiSummary.apiKey}
+                    onChange={(e) => updateAiSummary({ apiKey: e.target.value })}
+                    placeholder={aiSummary.provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
+                    className="w-full px-3 py-1.5 pr-16 text-sm bg-surface-soft border border-border rounded-lg focus:outline-none focus:border-brand-500 focus:bg-surface-base transition-colors font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(v => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-ink-muted hover:text-ink-primary px-1.5 py-0.5 rounded"
+                  >
+                    {showApiKey ? '숨김' : '보기'}
+                  </button>
+                </div>
+                <p className="text-[10px] text-ink-muted mt-1">세션 상세 화면의 "AI 요약" 버튼에서 사용됩니다. 키는 로컬에만 저장됩니다.</p>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>

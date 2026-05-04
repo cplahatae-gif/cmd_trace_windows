@@ -922,6 +922,145 @@ ipcMain.handle('session:export', async (_event, content: string, format: string,
   }
 })
 
+// ─── IPC: AI 요약 ──────────────────────────────────────────
+const ALLOWED_PROVIDERS = new Set(['anthropic', 'openai'])
+
+ipcMain.handle('session:summarize', async (
+  _event,
+  messages: { role: string; content: string }[],
+  provider: string,
+  apiKey: string
+) => {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { ok: false, error: '요약할 메시지가 없습니다.' }
+  }
+  // P1-2: 배열 크기 상한 — 대형 IPC 페이로드 방지
+  if (messages.length > 500) {
+    return { ok: false, error: '메시지 수가 너무 많습니다 (최대 500개).' }
+  }
+  if (typeof provider !== 'string' || !ALLOWED_PROVIDERS.has(provider)) {
+    return { ok: false, error: '지원하지 않는 AI 제공자입니다.' }
+  }
+  if (typeof apiKey !== 'string' || apiKey.trim().length < 20) {
+    return { ok: false, error: 'API 키가 너무 짧습니다.' }
+  }
+  // P2-1: API 키 prefix 검증
+  const trimmedKey = apiKey.trim()
+  if (provider === 'anthropic' && !trimmedKey.startsWith('sk-ant-')) {
+    return { ok: false, error: 'Anthropic API 키 형식이 잘못되었습니다 (sk-ant- 로 시작해야 합니다).' }
+  }
+  if (provider === 'openai' && !trimmedKey.startsWith('sk-')) {
+    return { ok: false, error: 'OpenAI API 키 형식이 잘못되었습니다 (sk- 로 시작해야 합니다).' }
+  }
+
+  // 메시지를 텍스트로 변환 (과도한 컨텍스트 방지 — 최대 6000자)
+  let transcript = ''
+  for (const msg of messages) {
+    if (typeof msg.role !== 'string' || typeof msg.content !== 'string') continue
+    const role = msg.role === 'user' ? '[사용자]' : '[AI]'
+    const snippet = msg.content.replace(/\n+/g, ' ').slice(0, 500)
+    transcript += `${role}: ${snippet}\n`
+    if (transcript.length > 6000) { transcript += '...'; break }
+  }
+
+  const systemPrompt = 'You are a concise technical summarizer. Summarize the AI coding session in Korean. Provide 3-5 bullet points covering: what was accomplished, key technical decisions, and any open issues. Be direct and specific.'
+  const userPrompt = `다음 AI 코딩 세션을 한국어로 3~5개 불릿 포인트로 요약해주세요:\n\n${transcript}`
+
+  if (provider === 'anthropic') return callAnthropicAPI(apiKey.trim(), systemPrompt, userPrompt)
+  return callOpenAIAPI(apiKey.trim(), systemPrompt, userPrompt)
+})
+
+function callAnthropicAPI(apiKey: string, system: string, user: string): Promise<{ ok: boolean; summary?: string; error?: string }> {
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      system,
+      messages: [{ role: 'user', content: user }],
+    })
+    const req = https.request({
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: 30000,
+    }, (res) => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => {
+        // P2-2: HTTP 상태코드 먼저 확인
+        if (res.statusCode && res.statusCode >= 400) {
+          try {
+            const json = JSON.parse(data)
+            return resolve({ ok: false, error: json.error?.message || `HTTP ${res.statusCode}` })
+          } catch { return resolve({ ok: false, error: `HTTP ${res.statusCode}` }) }
+        }
+        try {
+          const json = JSON.parse(data)
+          if (json.content?.[0]?.text) return resolve({ ok: true, summary: json.content[0].text })
+          if (json.error) return resolve({ ok: false, error: json.error.message || 'Anthropic API 오류' })
+          resolve({ ok: false, error: '예상치 못한 응답 형식' })
+        } catch { resolve({ ok: false, error: '응답 파싱 실패' }) }
+      })
+    })
+    req.on('error', (err: Error) => resolve({ ok: false, error: err.message }))
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: '요청 시간 초과 (30s)' }) })
+    req.write(body)
+    req.end()
+  })
+}
+
+function callOpenAIAPI(apiKey: string, system: string, user: string): Promise<{ ok: boolean; summary?: string; error?: string }> {
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      model: 'gpt-4o-mini',
+      max_tokens: 600,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    })
+    const req = https.request({
+      hostname: 'api.openai.com',
+      path: '/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: 30000,
+    }, (res) => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => {
+        // P2-2: HTTP 상태코드 먼저 확인
+        if (res.statusCode && res.statusCode >= 400) {
+          try {
+            const json = JSON.parse(data)
+            return resolve({ ok: false, error: json.error?.message || `HTTP ${res.statusCode}` })
+          } catch { return resolve({ ok: false, error: `HTTP ${res.statusCode}` }) }
+        }
+        try {
+          const json = JSON.parse(data)
+          if (json.choices?.[0]?.message?.content) return resolve({ ok: true, summary: json.choices[0].message.content })
+          if (json.error) return resolve({ ok: false, error: json.error.message || 'OpenAI API 오류' })
+          resolve({ ok: false, error: '예상치 못한 응답 형식' })
+        } catch { resolve({ ok: false, error: '응답 파싱 실패' }) }
+      })
+    })
+    req.on('error', (err: Error) => resolve({ ok: false, error: err.message }))
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: '요청 시간 초과 (30s)' }) })
+    req.write(body)
+    req.end()
+  })
+}
+
 // ─── Claude 세션 로더 ──────────────────────────────────────
 function loadClaudeSessions(claudeBase: string): SessionData[] {
   if (!fs.existsSync(claudeBase)) return []
