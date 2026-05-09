@@ -161,15 +161,20 @@ function createWindow() {
 
 // ─── 트레이 아이콘 경로 해석 ───────────────────────────────
 function resolveTrayIconPath(): string {
-  // packaged: process.resourcesPath/Resources/AppIcon.png
-  // dev: <repo>/Resources/AppIcon.png
-  const candidates = [
-    path.join(process.resourcesPath, 'Resources', 'AppIcon.png'),
-    path.join(__dirname, '..', 'Resources', 'AppIcon.png'),
-    path.join(__dirname, '..', '..', 'Resources', 'AppIcon.png'),
+  // 트레이는 32px이 적당 — 1024px 큰 아이콘은 흐릿하게 리사이즈됨
+  // packaged: process.resourcesPath/Resources/<file>
+  // dev: <repo>/Resources/<file>
+  const fileNames = ['tray-icon.png', 'AppIcon.png']
+  const baseDirs = [
+    path.join(process.resourcesPath, 'Resources'),
+    path.join(__dirname, '..', 'Resources'),
+    path.join(__dirname, '..', '..', 'Resources'),
   ]
-  for (const p of candidates) {
-    try { if (fs.existsSync(p)) return p } catch { /* skip */ }
+  for (const dir of baseDirs) {
+    for (const name of fileNames) {
+      const p = path.join(dir, name)
+      try { if (fs.existsSync(p)) return p } catch { /* skip */ }
+    }
   }
   return ''
 }

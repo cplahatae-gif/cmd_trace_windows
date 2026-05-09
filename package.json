@@ -48,7 +48,7 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "resources/icon.ico"
+      "icon": "Resources/icon.ico"
     },
     "files": [
       "dist/**/*",

@@ -17,9 +17,20 @@ export default defineConfig({
     //   cp -r /c/tmp/cmdtrace-build dist
     outDir: 'dist',
     emptyOutDir: true,
-    minify: false,
+    minify: 'esbuild',
+    chunkSizeWarningLimit: 1500,
     rollupOptions: {
       maxParallelFileOps: 1,
+      output: {
+        manualChunks: {
+          // 차트 라이브러리 (Dashboard / InsightsView에서만 사용)
+          'vendor-charts': ['recharts'],
+          // 마크다운 + 코드 하이라이트 (MessageView에서만 사용)
+          'vendor-markdown': ['react-markdown', 'remark-gfm', 'react-syntax-highlighter'],
+          // 날짜 포맷 (date-fns + locale)
+          'vendor-dates': ['date-fns', 'date-fns/locale'],
+        },
+      },
     },
   },
 })

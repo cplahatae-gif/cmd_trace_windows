@@ -169,15 +169,17 @@ Light-only theme based on flex.team visual language:
 | Session Diff (side-by-side comparison view) | ✅ |
 | Markdown rendering (remark-gfm + syntax highlighting) | ✅ |
 | Workspace restore timing fix (single wt command) | ✅ |
+| Dark mode CSS + 테마 전환 UI | ✅ |
+| ccusage Burn Rate (7일 추세 + 30일 예상) | ✅ |
+| safeStorage API 키 마이그레이션 (OS 자격증명) | ✅ |
+| Bulk AI Summary (다중 세션 일괄 요약 + 영속화) | ✅ |
+| Tray icon 에셋 (tray-icon.png 32x32 + icon.ico 멀티사이즈) | ✅ |
+| 번들 최적화 (vendor 청크 분리, esbuild minify) | ✅ |
 
 ### Pending
 | Feature | Priority |
 |---------|----------|
-| Dark mode CSS (ThemeType defined, CSS not implemented) | Medium |
-| ccusage Burn Rate / Native Monitor | Medium |
 | Built-in HTTP server (webapp dashboard) | Low |
-| Tray icon (code exists, needs real icon asset) | Low |
-| Phase 6: 테마 전환 UI | Low |
 
 ## Build Troubleshooting
 
