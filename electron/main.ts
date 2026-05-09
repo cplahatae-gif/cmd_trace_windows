@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog, nativeImage, safeStorage } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -16,6 +16,57 @@ const META_PATH         = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json
 const SETTINGS_PATH     = path.join(os.homedir(), '.claude', 'cmdtrace-settings.json')
 const PROJECTS_PATH     = path.join(os.homedir(), '.claude', 'cmdtrace-projects.json')
 const WORKSPACES_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-workspaces.json')
+const API_KEYS_PATH     = path.join(os.homedir(), '.claude', 'cmdtrace-keys.enc')
+
+// ─── API 키 저장소 (Electron safeStorage 기반 OS 자격증명 암호화) ─
+type KeyProvider = 'anthropic' | 'openai'
+const ALLOWED_KEY_PROVIDERS = new Set<KeyProvider>(['anthropic', 'openai'])
+
+function readEncryptedKeyStore(): Record<string, string> {
+  try {
+    if (!fs.existsSync(API_KEYS_PATH)) return {}
+    return JSON.parse(fs.readFileSync(API_KEYS_PATH, 'utf-8'))
+  } catch {
+    return {}
+  }
+}
+
+function writeEncryptedKeyStore(store: Record<string, string>): boolean {
+  try {
+    fs.writeFileSync(API_KEYS_PATH, JSON.stringify(store, null, 2), { encoding: 'utf-8', mode: 0o600 })
+    return true
+  } catch (err) {
+    console.error('API 키 저장 실패:', err)
+    return false
+  }
+}
+
+function setApiKey(provider: KeyProvider, plaintext: string): boolean {
+  if (!safeStorage.isEncryptionAvailable()) return false
+  const enc = safeStorage.encryptString(plaintext)
+  const store = readEncryptedKeyStore()
+  store[provider] = enc.toString('base64')
+  return writeEncryptedKeyStore(store)
+}
+
+function getApiKey(provider: KeyProvider): string | null {
+  if (!safeStorage.isEncryptionAvailable()) return null
+  const store = readEncryptedKeyStore()
+  const b64 = store[provider]
+  if (!b64) return null
+  try {
+    return safeStorage.decryptString(Buffer.from(b64, 'base64'))
+  } catch {
+    return null
+  }
+}
+
+function deleteApiKey(provider: KeyProvider): boolean {
+  const store = readEncryptedKeyStore()
+  if (!(provider in store)) return true
+  delete store[provider]
+  return writeEncryptedKeyStore(store)
+}
 
 // ─── Obsidian 연동 — 설정에서 동적 로드 ────────────────────
 interface ObsidianConfig {
@@ -337,9 +388,26 @@ ipcMain.handle('metadata:load', async () => {
 })
 
 // ─── IPC: 설정 저장/불러오기 (H-1: 설정 영속성) ───────────
+function migrateLegacyApiKey(settings: Record<string, unknown>): Record<string, unknown> {
+  const ai = settings.aiSummary as Record<string, unknown> | undefined
+  if (!ai || typeof ai !== 'object') return settings
+  const provider = ai.provider
+  const apiKey = ai.apiKey
+  if (typeof provider === 'string' && typeof apiKey === 'string' && apiKey.length > 0
+      && (provider === 'anthropic' || provider === 'openai')) {
+    if (setApiKey(provider as KeyProvider, apiKey)) {
+      delete (ai as Record<string, unknown>).apiKey
+    }
+  } else if (ai && 'apiKey' in ai) {
+    delete (ai as Record<string, unknown>).apiKey
+  }
+  return settings
+}
+
 ipcMain.handle('settings:save', async (_event, data: Record<string, unknown>) => {
   try {
-    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    const sanitized = migrateLegacyApiKey({ ...data })
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(sanitized, null, 2), 'utf-8')
     return { success: true }
   } catch (err) {
     console.error('설정 저장 실패:', err)
@@ -350,10 +418,44 @@ ipcMain.handle('settings:save', async (_event, data: Record<string, unknown>) =>
 ipcMain.handle('settings:load', async () => {
   if (!fs.existsSync(SETTINGS_PATH)) return null
   try {
-    return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'))
+    const raw = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'))
+    // 평문 API 키가 남아있으면 즉시 마이그레이션 + 파일에서 제거
+    const before = JSON.stringify(raw)
+    const migrated = migrateLegacyApiKey(raw)
+    if (JSON.stringify(migrated) !== before) {
+      try { fs.writeFileSync(SETTINGS_PATH, JSON.stringify(migrated, null, 2), 'utf-8') } catch {}
+    }
+    return migrated
   } catch {
     return null
   }
+})
+
+// ─── IPC: API 키 관리 (safeStorage) ───────────────────────
+ipcMain.handle('apiKey:save', async (_event, provider: string, key: string) => {
+  if (!ALLOWED_KEY_PROVIDERS.has(provider as KeyProvider)) {
+    return { ok: false, error: '지원하지 않는 제공자입니다.' }
+  }
+  if (typeof key !== 'string' || key.trim().length < 20) {
+    return { ok: false, error: 'API 키 형식이 잘못되었습니다.' }
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    return { ok: false, error: 'OS 자격증명 암호화를 사용할 수 없습니다.' }
+  }
+  const ok = setApiKey(provider as KeyProvider, key.trim())
+  return ok ? { ok: true } : { ok: false, error: '키 저장 실패' }
+})
+
+ipcMain.handle('apiKey:hasKey', async (_event, provider: string) => {
+  if (!ALLOWED_KEY_PROVIDERS.has(provider as KeyProvider)) return { hasKey: false }
+  return { hasKey: getApiKey(provider as KeyProvider) !== null }
+})
+
+ipcMain.handle('apiKey:delete', async (_event, provider: string) => {
+  if (!ALLOWED_KEY_PROVIDERS.has(provider as KeyProvider)) {
+    return { ok: false, error: '지원하지 않는 제공자입니다.' }
+  }
+  return { ok: deleteApiKey(provider as KeyProvider) }
 })
 
 // ─── IPC: 프로젝트 저장/불러오기 ──────────────────────────
@@ -1047,16 +1149,18 @@ ipcMain.handle('session:summarize', async (
     return { ok: false, error: '지원하지 않는 AI 제공자입니다.' }
   }
   // claude-cli는 API 키 불필요 — 이후 처리로 바로 넘김
+  let resolvedKey: string | null = null
   if (provider !== 'claude-cli') {
-    if (typeof apiKey !== 'string' || apiKey.trim().length < 20) {
-      return { ok: false, error: 'API 키가 너무 짧습니다.' }
+    // 1순위: safeStorage에 저장된 키, 2순위: 호출 인자로 전달된 키 (legacy)
+    resolvedKey = getApiKey(provider as KeyProvider) ?? (typeof apiKey === 'string' ? apiKey.trim() : null)
+    if (!resolvedKey || resolvedKey.length < 20) {
+      return { ok: false, error: 'API 키가 등록되지 않았습니다. 설정에서 등록해주세요.' }
     }
     // P2-1: API 키 prefix 검증
-    const trimmedKey = apiKey.trim()
-    if (provider === 'anthropic' && !trimmedKey.startsWith('sk-ant-')) {
+    if (provider === 'anthropic' && !resolvedKey.startsWith('sk-ant-')) {
       return { ok: false, error: 'Anthropic API 키 형식이 잘못되었습니다 (sk-ant- 로 시작해야 합니다).' }
     }
-    if (provider === 'openai' && !trimmedKey.startsWith('sk-')) {
+    if (provider === 'openai' && !resolvedKey.startsWith('sk-')) {
       return { ok: false, error: 'OpenAI API 키 형식이 잘못되었습니다 (sk- 로 시작해야 합니다).' }
     }
   }
@@ -1077,8 +1181,8 @@ ipcMain.handle('session:summarize', async (
   const systemPrompt = 'You are a concise technical summarizer. Summarize the AI coding session in Korean. Provide 3-5 bullet points covering: what was accomplished, key technical decisions, and any open issues. Be direct and specific.'
   const userPrompt = `다음 AI 코딩 세션을 한국어로 3~5개 불릿 포인트로 요약해주세요:\n\n${transcript}`
 
-  if (provider === 'anthropic') return callAnthropicAPI(apiKey.trim(), systemPrompt, userPrompt)
-  return callOpenAIAPI(apiKey.trim(), systemPrompt, userPrompt)
+  if (provider === 'anthropic') return callAnthropicAPI(resolvedKey!, systemPrompt, userPrompt)
+  return callOpenAIAPI(resolvedKey!, systemPrompt, userPrompt)
 })
 
 function callAnthropicAPI(apiKey: string, system: string, user: string): Promise<{ ok: boolean; summary?: string; error?: string }> {

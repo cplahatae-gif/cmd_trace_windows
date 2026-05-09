@@ -14,7 +14,7 @@ interface Props {
   allSessions?: Session[]
   settings: AppSettings
   isActive?: boolean
-  onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean }) => Promise<void>
+  onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean; summary?: string; summaryAt?: string }) => Promise<void>
   onDelete: (id: string) => void
   projects?: Project[]
   folders?: string[]
@@ -74,14 +74,15 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
     setActiveTab('messages')
     setMessageError(null)
     setInsightError(null)
-    setSummary(null)
+    // 저장된 요약이 있으면 표시, 없으면 초기화
+    setSummary(session.summary ?? null)
     setSummaryError(null)
     setResumeError(null)
     setDiffSession(null)
     setDiffMessages([])
     setShowDiffPicker(false)
     loadMessages()
-  }, [session.id, loadMessages])
+  }, [session.id, session.summary, loadMessages])
 
   const loadInsights = async () => {
     if (!window.electronAPI || insights) return
@@ -172,22 +173,26 @@ export default function SessionDetail({ session, allSessions = [], settings, isA
   const handleSummarize = async () => {
     if (!window.electronAPI?.summarizeSession) return
     const aiSummary = settings.aiSummary
-    // claude-cli는 API 키 불필요
-    if (aiSummary?.provider !== 'claude-cli' && !aiSummary?.apiKey?.trim()) {
-      setSummaryError('설정(⚙️)에서 AI 요약 API 키를 입력하거나 Claude Code 방식을 선택하세요.')
+    if (!aiSummary?.provider) {
+      setSummaryError('설정(⚙️)에서 AI 제공자를 선택하세요.')
       return
     }
     setIsSummarizing(true)
     setSummaryError(null)
     setSummary(null)
     try {
+      // 평소엔 main이 safeStorage에서 키를 조회 — 단, safeStorage 사용 불가로
+      // 마이그레이션이 실패해 settings에 평문 키가 남아있다면 그것을 fallback으로 전달
+      const fallbackKey = aiSummary.provider !== 'claude-cli' ? (aiSummary.apiKey ?? '') : ''
       const result = await window.electronAPI.summarizeSession(
         messages.map(m => ({ role: m.role, content: m.content })),
         aiSummary.provider,
-        aiSummary.apiKey.trim()
+        fallbackKey
       )
       if (result.ok && result.summary) {
         setSummary(result.summary)
+        // 메타데이터에 영속화 — 다음 로드 시 자동 표시
+        try { await onUpdateMeta(session.id, { summary: result.summary, summaryAt: new Date().toISOString() }) } catch {}
       } else {
         setSummaryError(result.error || 'AI 요약 실패')
       }

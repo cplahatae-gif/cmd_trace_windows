@@ -64,6 +64,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // AI 요약
   summarizeSession: (messages: { role: string; content: string }[], provider: string, apiKey: string) =>
     ipcRenderer.invoke('session:summarize', messages, provider, apiKey),
+  // API 키 관리 (safeStorage 기반 OS 자격증명 암호화)
+  saveApiKey: (provider: string, key: string) =>
+    ipcRenderer.invoke('apiKey:save', provider, key),
+  hasApiKey: (provider: string) =>
+    ipcRenderer.invoke('apiKey:hasKey', provider),
+  deleteApiKey: (provider: string) =>
+    ipcRenderer.invoke('apiKey:delete', provider),
   // ccusage 사용량
   loadUsage: () => ipcRenderer.invoke('usage:load'),
   // 파일 감시 이벤트 — 클린업 함수 반환 (누적 등록 방지)

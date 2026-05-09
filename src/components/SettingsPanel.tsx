@@ -1,10 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { AppSettings, AgentType, AiSummarySettings, ObsidianSettings, ThemeType } from '../types'
 type AiProvider = AiSummarySettings['provider']
 
 const DEFAULT_AI_SUMMARY: AiSummarySettings = {
   provider: 'claude-cli',
-  apiKey: '',
 }
 
 const DEFAULT_OBSIDIAN: ObsidianSettings = {
@@ -24,6 +23,49 @@ export default function SettingsPanel({ settings, onSettingsChange }: {
   const [showToken, setShowToken] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
   const [testStatus, setTestStatus] = useState<{ kind: 'idle' | 'testing' | 'ok' | 'error'; message?: string }>({ kind: 'idle' })
+
+  // safeStorage 기반 API 키 관리
+  const [keyInput, setKeyInput] = useState('')
+  const [hasStoredKey, setHasStoredKey] = useState(false)
+  const [keyStatus, setKeyStatus] = useState<{ kind: 'idle' | 'saving' | 'ok' | 'error'; message?: string }>({ kind: 'idle' })
+
+  useEffect(() => {
+    if (aiSummary.provider === 'claude-cli') return
+    if (!window.electronAPI?.hasApiKey) return
+    let cancelled = false
+    window.electronAPI.hasApiKey(aiSummary.provider).then(res => {
+      if (!cancelled) setHasStoredKey(res.hasKey)
+    })
+    setKeyInput('')
+    setKeyStatus({ kind: 'idle' })
+    return () => { cancelled = true }
+  }, [aiSummary.provider])
+
+  const saveApiKey = async () => {
+    if (!window.electronAPI?.saveApiKey) return
+    if (keyInput.trim().length < 20) {
+      setKeyStatus({ kind: 'error', message: 'API 키가 너무 짧습니다.' })
+      return
+    }
+    setKeyStatus({ kind: 'saving' })
+    const res = await window.electronAPI.saveApiKey(aiSummary.provider, keyInput.trim())
+    if (res.ok) {
+      setHasStoredKey(true)
+      setKeyInput('')
+      setKeyStatus({ kind: 'ok', message: '저장됨 (OS 암호화)' })
+    } else {
+      setKeyStatus({ kind: 'error', message: res.error ?? '저장 실패' })
+    }
+  }
+
+  const deleteStoredKey = async () => {
+    if (!window.electronAPI?.deleteApiKey) return
+    const res = await window.electronAPI.deleteApiKey(aiSummary.provider)
+    if (res.ok) {
+      setHasStoredKey(false)
+      setKeyStatus({ kind: 'idle' })
+    }
+  }
 
   const updateAiSummary = (patch: Partial<AiSummarySettings>) => {
     onSettingsChange({ ...settings, aiSummary: { ...aiSummary, ...patch } })
@@ -300,24 +342,62 @@ export default function SettingsPanel({ settings, onSettingsChange }: {
               {/* API 키 — claude-cli 선택 시 숨김 */}
               {aiSummary.provider !== 'claude-cli' && (
               <div>
-                <label className="block text-xs font-medium text-ink-secondary mb-1">API 키</label>
-                <div className="relative">
-                  <input
-                    type={showApiKey ? 'text' : 'password'}
-                    value={aiSummary.apiKey}
-                    onChange={(e) => updateAiSummary({ apiKey: e.target.value })}
-                    placeholder={aiSummary.provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
-                    className="w-full px-3 py-1.5 pr-16 text-sm bg-surface-soft border border-border rounded-lg focus:outline-none focus:border-brand-500 focus:bg-surface-base transition-colors font-mono"
-                  />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-ink-secondary">API 키</label>
+                  {hasStoredKey && (
+                    <span className="flex items-center gap-1 text-[10px] font-medium text-green-600">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      저장됨 (OS 암호화)
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showApiKey ? 'text' : 'password'}
+                      value={keyInput}
+                      onChange={(e) => setKeyInput(e.target.value)}
+                      placeholder={hasStoredKey
+                        ? '새 키로 교체하려면 입력'
+                        : (aiSummary.provider === 'anthropic' ? 'sk-ant-...' : 'sk-...')}
+                      className="w-full px-3 py-1.5 pr-14 text-sm bg-surface-soft border border-border rounded-lg focus:outline-none focus:border-brand-500 focus:bg-surface-base transition-colors font-mono"
+                      onKeyDown={(e) => { if (e.key === 'Enter' && keyInput) saveApiKey() }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(v => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-ink-muted hover:text-ink-primary px-1.5 py-0.5 rounded"
+                    >
+                      {showApiKey ? '숨김' : '보기'}
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setShowApiKey(v => !v)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-ink-muted hover:text-ink-primary px-1.5 py-0.5 rounded"
+                    onClick={saveApiKey}
+                    disabled={keyStatus.kind === 'saving' || !keyInput}
+                    className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                   >
-                    {showApiKey ? '숨김' : '보기'}
+                    저장
                   </button>
+                  {hasStoredKey && (
+                    <button
+                      type="button"
+                      onClick={deleteStoredKey}
+                      className="btn-secondary text-red-600 shrink-0"
+                    >
+                      삭제
+                    </button>
+                  )}
                 </div>
-                <p className="text-[10px] text-ink-muted mt-1">세션 상세 화면의 "AI 요약" 버튼에서 사용됩니다. 키는 로컬에만 저장됩니다.</p>
+                <p className="text-[10px] text-ink-muted mt-1.5">
+                  키는 OS 자격증명 저장소에 암호화되어 저장됩니다 (Windows DPAPI / macOS Keychain). 평문으로 디스크에 남지 않습니다.
+                </p>
+                {keyStatus.kind === 'ok' && (
+                  <p className="text-[10px] text-green-600 mt-0.5">✓ {keyStatus.message}</p>
+                )}
+                {keyStatus.kind === 'error' && (
+                  <p className="text-[10px] text-red-600 mt-0.5">✗ {keyStatus.message}</p>
+                )}
               </div>
               )}
             </div>

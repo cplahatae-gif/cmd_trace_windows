@@ -11,6 +11,7 @@ import ProjectsView from './components/ProjectsView'
 import ProjectDetailView from './components/ProjectDetailView'
 import WorkspacesView from './components/WorkspacesView'
 import WorkspaceModal from './components/WorkspaceModal'
+import BulkSummarizeModal from './components/BulkSummarizeModal'
 import type { ProjectFormData } from './components/ProjectModal'
 import { formatDistanceToNow } from 'date-fns'
 import { ko } from 'date-fns/locale'
@@ -40,12 +41,13 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [activeView, setActiveView] = useState<ActiveView>('sessions')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
-  const [metadata, setMetadata] = useState<Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string }>>({})
+  const [metadata, setMetadata] = useState<Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string; summary?: string; summaryAt?: string }>>({})
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set())
   const [showSaveWorkspaceModal, setShowSaveWorkspaceModal] = useState(false)
+  const [showBulkSummarizeModal, setShowBulkSummarizeModal] = useState(false)
   const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set())
 
   // 테마 적용 — settings.theme 변경 시 .dark 클래스 토글
@@ -92,7 +94,7 @@ export default function App() {
     setError(null)
     try {
       const raw  = await window.electronAPI.loadSessions(settings.agentType)
-      const meta = await window.electronAPI.loadMetadata() as Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string }>
+      const meta = await window.electronAPI.loadMetadata() as Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string; summary?: string; summaryAt?: string }>
       setMetadata(meta)
 
       const merged = raw.map(s => ({
@@ -103,6 +105,8 @@ export default function App() {
         isFavorited: meta[s.id]?.isFavorited ?? false,
         isPinned: meta[s.id]?.isPinned ?? false,
         projectId: meta[s.id]?.projectId ?? undefined,
+        summary: meta[s.id]?.summary,
+        summaryAt: meta[s.id]?.summaryAt,
       }))
       setSessions(merged)
     } catch (err) {
@@ -281,18 +285,20 @@ export default function App() {
   }, [selectedSession])
 
   // 세션 메타 업데이트 (공통 헬퍼)
+  // 순차 호출(예: BulkSummarizeModal) 시 stale closure로 인한 덮어쓰기를 막기 위해
+  // functional setState 안에서 최신 metadata 스냅샷을 만들고 그 결과를 IPC로 영속화한다.
   const applyMetaUpdate = async (
     sessionId: string,
-    updates: { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string }
+    updates: { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string; summary?: string; summaryAt?: string }
   ) => {
-    const newMeta = { ...metadata, [sessionId]: { ...metadata[sessionId], ...updates } }
-    setMetadata(newMeta)
-    const updated = sessions.map(s => s.id === sessionId ? { ...s, ...updates } : s)
-    setSessions(updated)
-    if (selectedSession?.id === sessionId) {
-      setSelectedSession(prev => prev ? { ...prev, ...updates } : prev)
-    }
-    if (window.electronAPI) await window.electronAPI.saveMetadata(newMeta)
+    let nextMeta: typeof metadata = metadata
+    setMetadata(prev => {
+      nextMeta = { ...prev, [sessionId]: { ...prev[sessionId], ...updates } }
+      return nextMeta
+    })
+    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, ...updates } : s))
+    setSelectedSession(prev => prev?.id === sessionId ? { ...prev, ...updates } : prev)
+    if (window.electronAPI) await window.electronAPI.saveMetadata(nextMeta)
   }
 
   const updateSessionMeta = (sessionId: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean }) =>
@@ -334,6 +340,11 @@ export default function App() {
     const selected = activeSessions.filter(s => selectedSessionIds.has(s.id))
     const allFavorited = selected.length > 0 && selected.every(s => s.isFavorited)
     await bulkApplyMeta(selectedSessionIds, { isFavorited: !allFavorited })
+  }
+
+  // 일괄 AI 요약 — BulkSummarizeModal에서 세션별로 호출
+  const persistSummary = async (sessionId: string, summary: string) => {
+    await applyMetaUpdate(sessionId, { summary, summaryAt: new Date().toISOString() })
   }
 
   // 소프트 삭제
@@ -601,6 +612,7 @@ export default function App() {
             onSaveActiveAsWorkspace={saveActiveAsWorkspace}
             onBulkPin={bulkPin}
             onBulkFavorite={bulkFavorite}
+            onBulkSummarize={() => setShowBulkSummarizeModal(true)}
           />
         )}
 
@@ -670,6 +682,15 @@ export default function App() {
           sessionCount={selectedSessionIds.size}
           onSave={createWorkspace}
           onClose={() => setShowSaveWorkspaceModal(false)}
+        />
+      )}
+
+      {showBulkSummarizeModal && (
+        <BulkSummarizeModal
+          sessions={activeSessions.filter(s => selectedSessionIds.has(s.id))}
+          aiSummary={settings.aiSummary}
+          onClose={() => setShowBulkSummarizeModal(false)}
+          onSummaryReady={persistSummary}
         />
       )}
     </div>

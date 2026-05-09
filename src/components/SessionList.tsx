@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Search, RefreshCw, Loader2, Trash2, Star, Pin, Layers, Check, X, Zap } from 'lucide-react'
+import { Search, RefreshCw, Loader2, Trash2, Star, Pin, Layers, Check, X, Zap, Sparkles } from 'lucide-react'
 import type { Session } from '../types'
 
 interface Props {
@@ -20,6 +20,7 @@ interface Props {
   onSaveActiveAsWorkspace: () => void
   onBulkPin: () => void
   onBulkFavorite: () => void
+  onBulkSummarize: () => void
 }
 
 // ─── 검색 하이라이트 ─────────────────────────────────────
@@ -60,6 +61,7 @@ export default function SessionList({
   onSaveActiveAsWorkspace,
   onBulkPin,
   onBulkFavorite,
+  onBulkSummarize,
 }: Props) {
   const grouped = useMemo(() => groupByDate(sessions), [sessions])
 
@@ -120,17 +122,24 @@ export default function SessionList({
           </span>
           <button
             onClick={onBulkPin}
-            className="flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-ink-secondary bg-white hover:bg-surface-subtle border border-border text-xs rounded-lg transition-colors"
+            className="flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-ink-secondary bg-surface-base hover:bg-surface-subtle border border-border text-xs rounded-lg transition-colors"
             title="핀 토글"
           >
             <Pin size={11} />
           </button>
           <button
             onClick={onBulkFavorite}
-            className="flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-ink-secondary bg-white hover:bg-surface-subtle border border-border text-xs rounded-lg transition-colors"
+            className="flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-ink-secondary bg-surface-base hover:bg-surface-subtle border border-border text-xs rounded-lg transition-colors"
             title="즐겨찾기 토글"
           >
             <Star size={11} />
+          </button>
+          <button
+            onClick={onBulkSummarize}
+            className="flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-brand-600 bg-surface-base hover:bg-brand-50 border border-border text-xs rounded-lg transition-colors"
+            title="AI 일괄 요약"
+          >
+            <Sparkles size={11} />
           </button>
           <button
             onClick={onSaveAsWorkspace}
