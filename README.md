@@ -1,22 +1,5 @@
 # CmdTrace Windows
 
-<!-- PUBLIC-PURPOSE-INTRO:START -->
-
-## 왜 이 프로젝트가 중요한가
-
-명령 실행 기록은 개발자의 기억을 보완하는 가장 정직한 로그입니다. 이 프로젝트는 Windows 환경에서도 작업 흐름을 추적하고 재현할 수 있게 만들어, 문제 해결과 자동화 실험을 더 투명하게 만드는 것을 목표로 합니다.
-
-## 기술적으로 무엇을 보여주는가
-
-Swift 및 데스크톱 구성 요소를 활용해 명령 실행, 상태 기록, 추적 UI를 구성합니다. 핵심 가치는 실행 맥락을 구조화하고, 디버깅과 회고에 필요한 증거를 남기는 것입니다.
-
-## 공개 저장소로서의 의미
-
-작업 기록을 잘 남기는 도구는 개인 생산성뿐 아니라 팀 단위 협업, 보안 감사, 장애 원인 분석의 기반이 됩니다.
-
-<!-- PUBLIC-PURPOSE-INTRO:END -->
-
-
 Windows desktop app for finding, organizing, reviewing, and resuming AI coding
 assistant sessions.
 
