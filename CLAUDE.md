@@ -67,6 +67,8 @@ App data stored in:
 
 ## Build & Run
 
+작업 디렉토리는 `C:\cmdtrace` 하나다. 이 저장소를 Google Drive 동기화 폴더 하위에 두면 Node.js가 reparse point를 `\\?\` UNC 경로로 해석해 rollup 로딩 시 `ERR_INVALID_PACKAGE_CONFIG`가 발생하므로, 로컬 경로 밖으로 옮기지 말 것.
+
 ```bash
 # Install dependencies
 npm install
@@ -199,53 +201,6 @@ Light-only theme based on flex.team visual language:
 | Feature | Priority |
 |---------|----------|
 | Built-in HTTP server (webapp dashboard) | Low |
-
-## Build Troubleshooting
-
-### ERR_INVALID_PACKAGE_CONFIG (Node.js 24 + Google Drive 경로)
-
-**증상**
-```
-Error: Invalid package config \\?\E:\...rollup\package.json
-code: 'ERR_INVALID_PACKAGE_CONFIG'
-```
-`npm run build` 또는 `npm run electron:dev` 실행 시 발생.
-
-**원인 분석**
-
-3가지 요소가 결합되어 발생:
-1. **Google Drive `.shortcut-targets-by-id`** — Google Drive가 동기화 파일을 reparse point(심볼릭 링크 유사)로 노출. Node.js가 `realpath()`를 호출할 때 이 reparse point를 따라가면서 `\\?\` UNC 형식 경로가 생성됨
-2. **Node.js v24 변경** — ESM 모듈 해석 시 `\\?\` 접두사 경로에서 `package.json` 파싱을 거부 (이전 버전에서는 허용)
-3. **rollup v4 ESM subpath exports** — `rollup/parseAst`처럼 서브패스 익스포트를 사용해 ESM 해석 경로를 반드시 통과
-
-`subst`, `mklink /J` (junction) 모두 실패 — junction도 `realpath()`가 원본 경로로 해석해 `\\?\`를 다시 생성.
-
-**해결책**
-
-소스 파일을 Google Drive 외부의 짧은 ASCII 경로로 실제 복사 후 빌드:
-
-```powershell
-# 1회성 설정: 소스만 복사 (node_modules 제외)
-robocopy "E:\.shortcut-targets-by-id\...\cmdtrace-windows" C:\cmdtrace /E /XD node_modules dist dist-electron .git /NFL /NDL /NP
-cd C:\cmdtrace
-npm install
-
-# 이후 매번 빌드 시
-cd C:\cmdtrace
-robocopy "E:\.shortcut-targets-by-id\...\cmdtrace-windows\src" C:\cmdtrace\src /E /NFL /NDL /NP
-robocopy "E:\.shortcut-targets-by-id\...\cmdtrace-windows\electron" C:\cmdtrace\electron /E /NFL /NDL /NP
-npm run build
-npm run electron:start
-```
-
-**근본 해결 (선택, 관리자 권한 필요)**
-
-Windows 레지스트리에서 긴 경로 지원 활성화 (재부팅 필요):
-```powershell
-# 관리자 PowerShell에서 실행
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1
-```
-활성화 후에는 `C:\cmdtrace` 없이 원본 경로에서 직접 빌드 가능.
 
 ## Version
 
