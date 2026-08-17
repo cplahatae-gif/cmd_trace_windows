@@ -1,17 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download, FolderPlus, ChevronDown, ExternalLink } from 'lucide-react'
+import { Play, FolderOpen, Tag, Edit2, BarChart2, MessageSquare, Loader2, Check, X, Trash2, Star, Pin, Download, FolderPlus, ChevronDown, ExternalLink, Sparkles, GitCompare, PanelRight, Copy } from 'lucide-react'
 import type { Session, Message, SessionInsights, AppSettings, ExportFormat, Project } from '../types'
 import { PROJECT_COLORS } from '../types'
 import MessageView from './MessageView'
 import InsightsView from './InsightsView'
 import ProjectModal from './ProjectModal'
 import type { ProjectFormData } from './ProjectModal'
+import DiffPickerModal from './DiffPickerModal'
+import SessionDiffView from './SessionDiffView'
 
 interface Props {
   session: Session
+  allSessions?: Session[]
   settings: AppSettings
   isActive?: boolean
-  onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean }) => Promise<void>
+  onUpdateMeta: (id: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean; summary?: string; summaryAt?: string }) => Promise<void>
   onDelete: (id: string) => void
   projects?: Project[]
   folders?: string[]
@@ -21,7 +24,7 @@ interface Props {
 
 type Tab = 'messages' | 'insights'
 
-export default function SessionDetail({ session, settings, isActive = false, onUpdateMeta, onDelete, projects, folders, onAssignSession, onCreateProjectFromSession }: Props) {
+export default function SessionDetail({ session, allSessions = [], settings, isActive = false, onUpdateMeta, onDelete, projects, folders, onAssignSession, onCreateProjectFromSession }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [insights, setInsights] = useState<SessionInsights | null>(null)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
@@ -31,6 +34,7 @@ export default function SessionDetail({ session, settings, isActive = false, onU
   const [editName, setEditName] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [isResuming, setIsResuming] = useState(false)
+  const [resumeError, setResumeError] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [messageError, setMessageError] = useState<string | null>(null)
   const [insightError, setInsightError] = useState<string | null>(null)
@@ -38,6 +42,16 @@ export default function SessionDetail({ session, settings, isActive = false, onU
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showProjectMenu, setShowProjectMenu] = useState(false)
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
+  const [summary, setSummary] = useState<string | null>(null)
+  const [isSummarizing, setIsSummarizing] = useState(false)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
+  const [showDiffPicker, setShowDiffPicker] = useState(false)
+  const [diffSession, setDiffSession] = useState<Session | null>(null)
+  const [diffMessages, setDiffMessages] = useState<Message[]>([])
+  const [isDiffLoading, setIsDiffLoading] = useState(false)
+  const [showInspector, setShowInspector] = useState(false)
+  const [copiedId, setCopiedId] = useState(false)
+  const [inspectorTagInput, setInspectorTagInput] = useState('')
 
   const loadMessages = useCallback(async () => {
     if (!window.electronAPI) return
@@ -60,8 +74,15 @@ export default function SessionDetail({ session, settings, isActive = false, onU
     setActiveTab('messages')
     setMessageError(null)
     setInsightError(null)
+    // 저장된 요약이 있으면 표시, 없으면 초기화
+    setSummary(session.summary ?? null)
+    setSummaryError(null)
+    setResumeError(null)
+    setDiffSession(null)
+    setDiffMessages([])
+    setShowDiffPicker(false)
     loadMessages()
-  }, [session.id, loadMessages])
+  }, [session.id, session.summary, loadMessages])
 
   const loadInsights = async () => {
     if (!window.electronAPI || insights) return
@@ -86,13 +107,15 @@ export default function SessionDetail({ session, settings, isActive = false, onU
   const handleResume = async () => {
     if (!window.electronAPI) return
     setIsResuming(true)
+    setResumeError(null)
     try {
-      await window.electronAPI.resumeSession(
+      const res = await window.electronAPI.resumeSession(
         session.sessionId,
         session.project,
         settings.terminal,
         settings.bypassPermissions
       )
+      if (!res.success) setResumeError(res.error || '세션 재개 실패')
     } finally {
       setTimeout(() => setIsResuming(false), 1000)
     }
@@ -145,6 +168,59 @@ export default function SessionDetail({ session, settings, isActive = false, onU
 
   const handleRemoveTag = async (tag: string) => {
     await onUpdateMeta(session.id, { tags: session.tags.filter(t => t !== tag) })
+  }
+
+  const handleSummarize = async () => {
+    if (!window.electronAPI?.summarizeSession) return
+    const aiSummary = settings.aiSummary
+    if (!aiSummary?.provider) {
+      setSummaryError('설정(⚙️)에서 AI 제공자를 선택하세요.')
+      return
+    }
+    setIsSummarizing(true)
+    setSummaryError(null)
+    setSummary(null)
+    try {
+      // 평소엔 main이 safeStorage에서 키를 조회 — 단, safeStorage 사용 불가로
+      // 마이그레이션이 실패해 settings에 평문 키가 남아있다면 그것을 fallback으로 전달
+      const fallbackKey = aiSummary.provider !== 'claude-cli' ? (aiSummary.apiKey ?? '') : ''
+      const result = await window.electronAPI.summarizeSession(
+        messages.map(m => ({ role: m.role, content: m.content })),
+        aiSummary.provider,
+        fallbackKey
+      )
+      if (result.ok && result.summary) {
+        setSummary(result.summary)
+        // 메타데이터에 영속화 — 다음 로드 시 자동 표시
+        try { await onUpdateMeta(session.id, { summary: result.summary, summaryAt: new Date().toISOString() }) } catch {}
+      } else {
+        setSummaryError(result.error || 'AI 요약 실패')
+      }
+    } catch (err) {
+      setSummaryError(String(err))
+    } finally {
+      setIsSummarizing(false)
+    }
+  }
+
+  const handleSelectDiff = async (target: Session) => {
+    setShowDiffPicker(false)
+    setDiffSession(target)
+    setIsDiffLoading(true)
+    // 연속 클릭 시 stale 응답 무시 — 선택 시점의 ID 캡처
+    const selectedId = target.id
+    try {
+      const msgs = await window.electronAPI?.loadMessages(target.projectFolder, target.fileName) ?? []
+      setDiffSession(prev => {
+        if (prev?.id !== selectedId) return prev // 이미 다른 세션 선택됨
+        setDiffMessages(msgs)
+        return prev
+      })
+    } catch {
+      setDiffMessages([])
+    } finally {
+      setIsDiffLoading(false)
+    }
   }
 
   const displayTitle = session.customName || session.preview.slice(0, 80) || session.sessionId
@@ -256,14 +332,19 @@ export default function SessionDetail({ session, settings, isActive = false, onU
 
         {/* 액션 버튼 */}
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={handleResume}
-            disabled={isResuming}
-            className="btn-primary"
-          >
-            {isResuming ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-            세션 재개
-          </button>
+          <div className="flex flex-col items-start gap-0.5">
+            <button
+              onClick={handleResume}
+              disabled={isResuming}
+              className="btn-primary"
+            >
+              {isResuming ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+              세션 재개
+            </button>
+            {resumeError && (
+              <span className="text-[10px] text-red-500">{resumeError}</span>
+            )}
+          </div>
           <button onClick={handleOpenFolder} className="btn-secondary">
             <FolderOpen size={12} />
             폴더
@@ -363,6 +444,29 @@ export default function SessionDetail({ session, settings, isActive = false, onU
             </div>
           )}
 
+          {/* AI 요약 */}
+          <button
+            onClick={handleSummarize}
+            disabled={isSummarizing || isLoadingMessages || messages.length === 0}
+            title="AI로 세션 요약"
+            className="btn-secondary disabled:opacity-40"
+          >
+            {isSummarizing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            AI 요약
+          </button>
+
+          {/* 세션 비교 */}
+          {allSessions.length > 1 && (
+            <button
+              onClick={() => setShowDiffPicker(v => !v)}
+              title="다른 세션과 비교"
+              className={`btn-secondary ${diffSession ? 'text-green-600 border-green-300 bg-green-50 hover:bg-green-100' : ''}`}
+            >
+              <GitCompare size={12} />
+              {diffSession ? '비교 중' : '비교'}
+            </button>
+          )}
+
           {/* 내보내기 */}
           <div className="relative">
             <button
@@ -389,7 +493,19 @@ export default function SessionDetail({ session, settings, isActive = false, onU
             )}
           </div>
 
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            {/* Inspector 패널 토글 */}
+            <button
+              onClick={() => setShowInspector(v => !v)}
+              title={showInspector ? 'Inspector 숨기기' : 'Inspector 보기'}
+              className={`p-1.5 rounded-lg transition-colors ${
+                showInspector
+                  ? 'text-brand-500 bg-brand-50'
+                  : 'text-ink-faint hover:text-ink-secondary hover:bg-surface-subtle'
+              }`}
+            >
+              <PanelRight size={13} />
+            </button>
             {showDeleteConfirm ? (
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-ink-secondary">삭제?</span>
@@ -440,8 +556,52 @@ export default function SessionDetail({ session, settings, isActive = false, onU
         ))}
       </div>
 
-      {/* 콘텐츠 */}
-      <div className="flex-1 overflow-hidden bg-surface-soft">
+      {/* AI 요약 결과 / 오류 카드 */}
+      {(summary || summaryError) && (
+        <div className={`mx-4 mt-3 mb-1 p-3 rounded-xl border text-sm ${
+          summaryError
+            ? 'bg-red-50 border-red-100 text-red-700'
+            : 'bg-amber-50 border-amber-100 text-ink-primary'
+        }`}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2">
+              <Sparkles size={14} className={summaryError ? 'text-red-400 mt-0.5 shrink-0' : 'text-amber-500 mt-0.5 shrink-0'} />
+              <p className="whitespace-pre-wrap leading-relaxed">{summary || summaryError}</p>
+            </div>
+            <button
+              onClick={() => { setSummary(null); setSummaryError(null) }}
+              className="text-ink-faint hover:text-ink-muted shrink-0 mt-0.5"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 본문 (Diff뷰 / 탭 콘텐츠 + Inspector 사이드바) ─── */}
+      <div className="flex flex-1 overflow-hidden">
+      {/* 세션 비교 뷰 — diffSession이 설정되면 탭 콘텐츠 대신 표시 */}
+      {diffSession && (
+        isDiffLoading ? (
+          <div className="flex-1 flex items-center justify-center text-ink-muted">
+            <Loader2 size={18} className="animate-spin mr-2" />
+            <span className="text-sm">비교 세션 로딩 중...</span>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-hidden">
+            <SessionDiffView
+              sessionA={session}
+              sessionB={diffSession}
+              messagesA={messages}
+              messagesB={diffMessages}
+              onClose={() => { setDiffSession(null); setDiffMessages([]) }}
+            />
+          </div>
+        )
+      )}
+
+      {/* 콘텐츠 (비교 모드가 아닐 때) */}
+      {!diffSession && <div className="flex-1 overflow-hidden bg-surface-soft">
         {activeTab === 'messages' ? (
           isLoadingMessages ? (
             <div className="flex items-center justify-center h-full text-ink-muted">
@@ -472,7 +632,111 @@ export default function SessionDetail({ session, settings, isActive = false, onU
             <InsightsView insights={insights} />
           ) : null
         )}
-      </div>
+      </div>}
+
+      {/* Inspector 사이드바 */}
+      {showInspector && !diffSession && (
+        <aside className="w-52 shrink-0 border-l border-border bg-surface-soft overflow-y-auto scrollbar-thin">
+          {/* 세션 정보 */}
+          <section className="px-3 py-3 border-b border-border">
+            <p className="text-[10px] font-semibold text-ink-faint uppercase tracking-widest mb-2">세션 정보</p>
+            <div className="space-y-1.5 text-[11px] text-ink-muted">
+              <div><span className="text-ink-faint">프로젝트</span><br /><span className="text-ink-secondary font-medium break-all">{projectName}</span></div>
+              <div><span className="text-ink-faint">메시지</span> <span className="text-ink-secondary font-medium">{session.messageCount}개</span></div>
+              {session.firstTimestamp && (
+                <div><span className="text-ink-faint">소요시간</span> <span className="text-ink-secondary font-medium">{formatDuration(session.firstTimestamp, session.lastActivity)}</span></div>
+              )}
+              <div><span className="text-ink-faint">마지막 활동</span><br /><span className="text-ink-secondary">{new Date(session.lastActivity).toLocaleDateString('ko-KR')}</span></div>
+            </div>
+          </section>
+
+          {/* 태그 */}
+          <section className="px-3 py-3 border-b border-border">
+            <p className="text-[10px] font-semibold text-ink-faint uppercase tracking-widest mb-2">태그</p>
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {session.tags.map(tag => (
+                <span key={tag} className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-brand-50 text-brand-600 rounded-full font-medium">
+                  #{tag}
+                  <button onClick={() => handleRemoveTag(tag)} className="hover:text-brand-800">
+                    <X size={8} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <Tag size={9} className="text-ink-faint" />
+              <input
+                value={inspectorTagInput}
+                onChange={e => setInspectorTagInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key !== 'Enter' || !inspectorTagInput.trim()) return
+                  const newTag = inspectorTagInput.trim().toLowerCase().replace(/\s+/g, '-')
+                  if (!session.tags.includes(newTag)) onUpdateMeta(session.id, { tags: [...session.tags, newTag] })
+                  setInspectorTagInput('')
+                }}
+                className="w-full bg-transparent text-[11px] text-ink-secondary focus:outline-none placeholder-ink-faint"
+                placeholder="태그 추가..."
+              />
+            </div>
+          </section>
+
+          {/* 퀵 액션 */}
+          <section className="px-3 py-3 border-b border-border">
+            <p className="text-[10px] font-semibold text-ink-faint uppercase tracking-widest mb-2">퀵 액션</p>
+            <div className="space-y-1">
+              <button
+                onClick={handleToggleFavorite}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                  session.isFavorited ? 'text-amber-600 bg-amber-50' : 'text-ink-secondary hover:bg-surface-subtle'
+                }`}
+              >
+                <Star size={12} fill={session.isFavorited ? 'currentColor' : 'none'} />
+                {session.isFavorited ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+              </button>
+              <button
+                onClick={handleTogglePin}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                  session.isPinned ? 'text-brand-500 bg-brand-50' : 'text-ink-secondary hover:bg-surface-subtle'
+                }`}
+              >
+                <Pin size={12} fill={session.isPinned ? 'currentColor' : 'none'} />
+                {session.isPinned ? '핀 해제' : '핀 고정'}
+              </button>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(session.sessionId)
+                  setCopiedId(true)
+                  setTimeout(() => setCopiedId(false), 1500)
+                }}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] font-medium text-ink-secondary hover:bg-surface-subtle transition-colors"
+              >
+                {copiedId ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+                {copiedId ? '복사됨!' : '세션 ID 복사'}
+              </button>
+            </div>
+          </section>
+
+          {/* AI 요약 결과 (있을 때만) */}
+          {summary && (
+            <section className="px-3 py-3">
+              <p className="text-[10px] font-semibold text-ink-faint uppercase tracking-widest mb-2">AI 요약</p>
+              <p className="text-[11px] text-ink-secondary whitespace-pre-wrap leading-relaxed">{summary}</p>
+              <button onClick={() => setSummary(null)} className="mt-1.5 text-[10px] text-ink-faint hover:text-ink-muted">지우기</button>
+            </section>
+          )}
+        </aside>
+      )}
+      </div>{/* 본문 flex row 닫기 */}
+
+      {/* 비교 세션 선택 모달 */}
+      {showDiffPicker && (
+        <DiffPickerModal
+          currentSession={session}
+          allSessions={allSessions}
+          onSelect={handleSelectDiff}
+          onClose={() => setShowDiffPicker(false)}
+        />
+      )}
 
       {/* 새 프로젝트 생성 모달 (세션 정보 자동 채움) */}
       {showNewProjectModal && (

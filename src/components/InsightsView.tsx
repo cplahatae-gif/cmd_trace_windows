@@ -1,5 +1,6 @@
 import type { SessionInsights } from '../types'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { useDarkMode } from '../hooks/useDarkMode'
 
 interface Props {
   insights: SessionInsights
@@ -8,6 +9,10 @@ interface Props {
 const COLORS = ['#635bff', '#8b7ef8', '#a99ef5', '#c4beff', '#d8d4ff']
 
 export default function InsightsView({ insights }: Props) {
+  const isDark = useDarkMode()
+  const xTickColor = isDark ? '#7e8593' : '#9ca3af'
+  const yTickColor = isDark ? '#b4bac4' : '#6b7280'
+  const tooltipBg = isDark ? '#16181e' : '#ffffff'
   const { totalTokenUsage, toolStatistics, modelUsage, totalDurationMs } = insights
   const totalTokens = totalTokenUsage.inputTokens + totalTokenUsage.outputTokens
 
@@ -41,15 +46,16 @@ export default function InsightsView({ insights }: Props) {
           <div className="bg-surface-base rounded-xl border border-border p-3" style={{ height: 200 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={toolStatistics.slice(0, 8)} layout="vertical" margin={{ left: 4, right: 20, top: 4, bottom: 4 }}>
-                <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#6b7280', fontSize: 10 }} width={90} axisLine={false} tickLine={false} />
+                <XAxis type="number" tick={{ fill: xTickColor, fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: yTickColor, fontSize: 10 }} width={90} axisLine={false} tickLine={false} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#ffffff',
+                    backgroundColor: tooltipBg,
                     border: '1px solid var(--border-color)',
                     borderRadius: 8,
                     fontSize: 12,
                     boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                    color: 'var(--ink-primary)',
                   }}
                   cursor={{ fill: 'rgba(99,91,255,0.05)' }}
                 />

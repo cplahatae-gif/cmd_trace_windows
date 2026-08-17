@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog, nativeImage, safeStorage } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -16,6 +16,57 @@ const META_PATH         = path.join(os.homedir(), '.claude', 'cmdtrace-meta.json
 const SETTINGS_PATH     = path.join(os.homedir(), '.claude', 'cmdtrace-settings.json')
 const PROJECTS_PATH     = path.join(os.homedir(), '.claude', 'cmdtrace-projects.json')
 const WORKSPACES_PATH   = path.join(os.homedir(), '.claude', 'cmdtrace-workspaces.json')
+const API_KEYS_PATH     = path.join(os.homedir(), '.claude', 'cmdtrace-keys.enc')
+
+// ─── API 키 저장소 (Electron safeStorage 기반 OS 자격증명 암호화) ─
+type KeyProvider = 'anthropic' | 'openai'
+const ALLOWED_KEY_PROVIDERS = new Set<KeyProvider>(['anthropic', 'openai'])
+
+function readEncryptedKeyStore(): Record<string, string> {
+  try {
+    if (!fs.existsSync(API_KEYS_PATH)) return {}
+    return JSON.parse(fs.readFileSync(API_KEYS_PATH, 'utf-8'))
+  } catch {
+    return {}
+  }
+}
+
+function writeEncryptedKeyStore(store: Record<string, string>): boolean {
+  try {
+    fs.writeFileSync(API_KEYS_PATH, JSON.stringify(store, null, 2), { encoding: 'utf-8', mode: 0o600 })
+    return true
+  } catch (err) {
+    console.error('API 키 저장 실패:', err)
+    return false
+  }
+}
+
+function setApiKey(provider: KeyProvider, plaintext: string): boolean {
+  if (!safeStorage.isEncryptionAvailable()) return false
+  const enc = safeStorage.encryptString(plaintext)
+  const store = readEncryptedKeyStore()
+  store[provider] = enc.toString('base64')
+  return writeEncryptedKeyStore(store)
+}
+
+function getApiKey(provider: KeyProvider): string | null {
+  if (!safeStorage.isEncryptionAvailable()) return null
+  const store = readEncryptedKeyStore()
+  const b64 = store[provider]
+  if (!b64) return null
+  try {
+    return safeStorage.decryptString(Buffer.from(b64, 'base64'))
+  } catch {
+    return null
+  }
+}
+
+function deleteApiKey(provider: KeyProvider): boolean {
+  const store = readEncryptedKeyStore()
+  if (!(provider in store)) return true
+  delete store[provider]
+  return writeEncryptedKeyStore(store)
+}
 
 // ─── Obsidian 연동 — 설정에서 동적 로드 ────────────────────
 interface ObsidianConfig {
@@ -66,6 +117,12 @@ function isValidDirectory(dirPath: string): boolean {
   try { return fs.statSync(dirPath).isDirectory() } catch { return false }
 }
 
+// ─── 공통 헬퍼: 프로세스 실행 + 에러 로깅 ─────────────────
+function spawnAndWatch(cmd: string, args: string[], opts: object): void {
+  const proc: ChildProcess = spawn(cmd, args, opts)
+  proc.on('error', (err) => console.error(`[spawn] ${cmd} 오류:`, err))
+}
+
 // ─── 윈도우 생성 ───────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -104,15 +161,20 @@ function createWindow() {
 
 // ─── 트레이 아이콘 경로 해석 ───────────────────────────────
 function resolveTrayIconPath(): string {
-  // packaged: process.resourcesPath/Resources/AppIcon.png
-  // dev: <repo>/Resources/AppIcon.png
-  const candidates = [
-    path.join(process.resourcesPath, 'Resources', 'AppIcon.png'),
-    path.join(__dirname, '..', 'Resources', 'AppIcon.png'),
-    path.join(__dirname, '..', '..', 'Resources', 'AppIcon.png'),
+  // 트레이는 32px이 적당 — 1024px 큰 아이콘은 흐릿하게 리사이즈됨
+  // packaged: process.resourcesPath/Resources/<file>
+  // dev: <repo>/Resources/<file>
+  const fileNames = ['tray-icon.png', 'AppIcon.png']
+  const baseDirs = [
+    path.join(process.resourcesPath, 'Resources'),
+    path.join(__dirname, '..', 'Resources'),
+    path.join(__dirname, '..', '..', 'Resources'),
   ]
-  for (const p of candidates) {
-    try { if (fs.existsSync(p)) return p } catch { /* skip */ }
+  for (const dir of baseDirs) {
+    for (const name of fileNames) {
+      const p = path.join(dir, name)
+      try { if (fs.existsSync(p)) return p } catch { /* skip */ }
+    }
   }
   return ''
 }
@@ -189,11 +251,6 @@ ipcMain.handle('session:resume', async (_event, sessionId: string, projectPath: 
   const pane = sessionPaneCount
   sessionPaneCount = (sessionPaneCount + 1) % 4
 
-  const spawnAndWatch = (cmd: string, args: string[], opts: object): void => {
-    const proc: ChildProcess = spawn(cmd, args, opts)
-    proc.on('error', (err) => console.error(`[spawn] ${cmd} 오류:`, err))
-  }
-
   switch (terminal) {
     case 'wt':
     case 'powershell': {
@@ -212,9 +269,9 @@ ipcMain.handle('session:resume', async (_event, sessionId: string, projectPath: 
     }
     case 'cmd':
     default: {
-      // shell: false 사용, start /d 로 작업 디렉토리 지정
-      const startArgs = projectPath
-        ? ['/c', 'start', '/d', projectPath, 'cmd', '/k', resumeCmd]
+      // P3-2 수정: validProjectPath 사용 (검증된 경로만 -d 인수로 전달)
+      const startArgs = validProjectPath
+        ? ['/c', 'start', '/d', validProjectPath, 'cmd', '/k', resumeCmd]
         : ['/c', 'start', 'cmd', '/k', resumeCmd]
       spawnAndWatch('cmd', startArgs, { detached: true, shell: false })
       break
@@ -226,6 +283,83 @@ ipcMain.handle('session:resume', async (_event, sessionId: string, projectPath: 
 // ─── IPC: 패널 카운터 리셋 ─────────────────────────────────
 ipcMain.handle('session:resetPanes', () => {
   sessionPaneCount = 0
+  return { success: true }
+})
+
+// ─── IPC: 워크스페이스 일괄 복원 (단일 wt 호출) ─────────────
+// 순차 300ms 딜레이 대신 하나의 wt 명령에 모든 pane을 체이닝.
+// WT가 내부적으로 순서대로 처리하므로 타이밍 경쟁 없음.
+interface WsEntry {
+  sessionId: string
+  projectPath: string
+  agentType: string
+  title: string
+}
+
+ipcMain.handle('workspaces:restoreAll', async (
+  _event,
+  entries: WsEntry[],
+  terminal: string,
+  bypass: boolean
+) => {
+  if (!Array.isArray(entries) || entries.length === 0) return { success: true }
+
+  // 유효한 세션만 필터링
+  const valid = entries.filter(e => typeof e.sessionId === 'string' && sanitizeSessionId(e.sessionId))
+  if (valid.length === 0) return { success: false, error: '유효한 세션이 없습니다.' }
+
+  sessionPaneCount = 0
+
+  const wtArgs: string[] = ['-w', WT_WINDOW]
+
+  for (let i = 0; i < valid.length; i++) {
+    const entry = valid[i]
+    const safeId = sanitizeSessionId(entry.sessionId)!
+    const cli = entry.agentType === 'opencode' ? 'opencode' : 'claude'
+    const cliArgs = (cli === 'claude' && bypass)
+      ? [cli, '-r', safeId, '--dangerously-skip-permissions']
+      : [cli, '-r', safeId]
+    const resumeCmd = cliArgs.join(' ')
+    const validPath = (entry.projectPath && isValidDirectory(entry.projectPath)) ? entry.projectPath : ''
+    const dirArgs = validPath ? ['-d', validPath] : []
+    const shellArgs = terminal === 'powershell'
+      ? ['powershell', '-NoExit', '-Command', resumeCmd]
+      : ['cmd', '/k', resumeCmd]
+    const title = entry.title?.slice(0, 30) || `Session ${i + 1}`
+    const pane = i % 4
+
+    if (i === 0) {
+      wtArgs.push('nt', '--title', title, ...dirArgs, ...shellArgs)
+    } else if (pane === 0) {
+      // 5번째, 9번째... — 새 탭으로 열기
+      wtArgs.push(';', 'nt', '--title', title, ...dirArgs, ...shellArgs)
+    } else if (pane === 1) {
+      wtArgs.push(';', 'sp', '-V', '--title', title, ...dirArgs, ...shellArgs)
+    } else if (pane === 2) {
+      wtArgs.push(';', 'mf', 'left', ';', 'sp', '-H', '--title', title, ...dirArgs, ...shellArgs)
+    } else {
+      wtArgs.push(';', 'mf', 'right', ';', 'sp', '-H', '--title', title, ...dirArgs, ...shellArgs)
+    }
+  }
+
+  if (terminal === 'wt' || terminal === 'powershell') {
+    spawnAndWatch('wt', wtArgs, { detached: true, shell: false })
+  } else {
+    // cmd 터미널: 각 세션을 별도 창으로 순차 실행 (wt 체이닝 불가)
+    for (const entry of valid) {
+      const safeId = sanitizeSessionId(entry.sessionId)!
+      const cli = entry.agentType === 'opencode' ? 'opencode' : 'claude'
+      const cliArgs = (cli === 'claude' && bypass) ? [cli, '-r', safeId, '--dangerously-skip-permissions'] : [cli, '-r', safeId]
+      const resumeCmd = cliArgs.join(' ')
+      const validPath = (entry.projectPath && isValidDirectory(entry.projectPath)) ? entry.projectPath : ''
+      const startArgs = validPath
+        ? ['/c', 'start', '/d', validPath, 'cmd', '/k', resumeCmd]
+        : ['/c', 'start', 'cmd', '/k', resumeCmd]
+      spawnAndWatch('cmd', startArgs, { detached: true, shell: false })
+    }
+  }
+  sessionPaneCount = valid.length % 4
+
   return { success: true }
 })
 
@@ -259,9 +393,26 @@ ipcMain.handle('metadata:load', async () => {
 })
 
 // ─── IPC: 설정 저장/불러오기 (H-1: 설정 영속성) ───────────
+function migrateLegacyApiKey(settings: Record<string, unknown>): Record<string, unknown> {
+  const ai = settings.aiSummary as Record<string, unknown> | undefined
+  if (!ai || typeof ai !== 'object') return settings
+  const provider = ai.provider
+  const apiKey = ai.apiKey
+  if (typeof provider === 'string' && typeof apiKey === 'string' && apiKey.length > 0
+      && (provider === 'anthropic' || provider === 'openai')) {
+    if (setApiKey(provider as KeyProvider, apiKey)) {
+      delete (ai as Record<string, unknown>).apiKey
+    }
+  } else if (ai && 'apiKey' in ai) {
+    delete (ai as Record<string, unknown>).apiKey
+  }
+  return settings
+}
+
 ipcMain.handle('settings:save', async (_event, data: Record<string, unknown>) => {
   try {
-    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    const sanitized = migrateLegacyApiKey({ ...data })
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(sanitized, null, 2), 'utf-8')
     return { success: true }
   } catch (err) {
     console.error('설정 저장 실패:', err)
@@ -272,10 +423,44 @@ ipcMain.handle('settings:save', async (_event, data: Record<string, unknown>) =>
 ipcMain.handle('settings:load', async () => {
   if (!fs.existsSync(SETTINGS_PATH)) return null
   try {
-    return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'))
+    const raw = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'))
+    // 평문 API 키가 남아있으면 즉시 마이그레이션 + 파일에서 제거
+    const before = JSON.stringify(raw)
+    const migrated = migrateLegacyApiKey(raw)
+    if (JSON.stringify(migrated) !== before) {
+      try { fs.writeFileSync(SETTINGS_PATH, JSON.stringify(migrated, null, 2), 'utf-8') } catch {}
+    }
+    return migrated
   } catch {
     return null
   }
+})
+
+// ─── IPC: API 키 관리 (safeStorage) ───────────────────────
+ipcMain.handle('apiKey:save', async (_event, provider: string, key: string) => {
+  if (!ALLOWED_KEY_PROVIDERS.has(provider as KeyProvider)) {
+    return { ok: false, error: '지원하지 않는 제공자입니다.' }
+  }
+  if (typeof key !== 'string' || key.trim().length < 20) {
+    return { ok: false, error: 'API 키 형식이 잘못되었습니다.' }
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    return { ok: false, error: 'OS 자격증명 암호화를 사용할 수 없습니다.' }
+  }
+  const ok = setApiKey(provider as KeyProvider, key.trim())
+  return ok ? { ok: true } : { ok: false, error: '키 저장 실패' }
+})
+
+ipcMain.handle('apiKey:hasKey', async (_event, provider: string) => {
+  if (!ALLOWED_KEY_PROVIDERS.has(provider as KeyProvider)) return { hasKey: false }
+  return { hasKey: getApiKey(provider as KeyProvider) !== null }
+})
+
+ipcMain.handle('apiKey:delete', async (_event, provider: string) => {
+  if (!ALLOWED_KEY_PROVIDERS.has(provider as KeyProvider)) {
+    return { ok: false, error: '지원하지 않는 제공자입니다.' }
+  }
+  return { ok: deleteApiKey(provider as KeyProvider) }
 })
 
 // ─── IPC: 프로젝트 저장/불러오기 ──────────────────────────
@@ -352,6 +537,98 @@ ipcMain.handle('workspaces:load', async () => {
     return []
   }
 })
+
+// ─── IPC: 컨텐츠 검색 (content:/regex: 연산자) ────────────
+const ALLOWED_AGENT_TYPES = new Set(['claude', 'opencode'])
+
+ipcMain.handle('sessions:searchContent', async (_event, query: string, isRegex: boolean, agentType: string) => {
+  if (!query || typeof query !== 'string') return []
+  if (typeof agentType !== 'string' || !ALLOWED_AGENT_TYPES.has(agentType)) return []
+
+  // P1 ReDoS 방지: regex 입력 길이 제한 + 위험 패턴 차단
+  if (isRegex) {
+    if (query.length > 200) return []
+    // 카타스트로픽 백트래킹 유발 패턴 거부 (중첩 수량사 등)
+    if (/(\(.*[+*]\))[+*?]|(\.\*){3,}|\(\?.*\)\+/.test(query)) return []
+  }
+
+  let pattern: RegExp
+  try {
+    pattern = isRegex
+      ? new RegExp(query, 'i')
+      : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+  } catch {
+    return [] // 잘못된 정규식이면 빈 결과
+  }
+
+  const matchingIds: string[] = []
+
+  if (agentType === 'claude') {
+    if (!fs.existsSync(CLAUDE_BASE)) return []
+    let projectDirs: fs.Dirent[]
+    try {
+      projectDirs = fs.readdirSync(CLAUDE_BASE, { withFileTypes: true }).filter(d => d.isDirectory())
+    } catch { return [] }
+
+    let fileCount = 0
+    for (const dir of projectDirs) {
+      const dirPath = path.join(CLAUDE_BASE, dir.name)
+      try {
+        const files = fs.readdirSync(dirPath).filter((f: string) => f.endsWith('.jsonl') && !f.startsWith('agent-'))
+        for (const file of files) {
+          const filePath = path.join(dirPath, file)
+          // P1-2: 경로 순회 방지 — 기존 핸들러와 동일한 보안 패턴 적용
+          if (!validatePathInBase(filePath, CLAUDE_BASE)) continue
+          // P1-4: 이벤트 루프 블로킹 방지 — 10파일마다 양보
+          fileCount++
+          if (fileCount % 10 === 0) await new Promise<void>(resolve => setImmediate(resolve))
+
+          const sessionId = searchJSONLContent(filePath, pattern)
+          if (sessionId) matchingIds.push(`${dir.name}/${sessionId}`)
+        }
+      } catch { /* skip */ }
+    }
+  }
+  // OpenCode는 JSON 파일 구조가 달라 별도 처리 (현재 미지원)
+
+  return matchingIds
+})
+
+// P2-2 수정: boolean 대신 실제 sessionId 반환 (parseClaudeSession과 동일 로직으로 ID 일치 보장)
+function searchJSONLContent(filePath: string, pattern: RegExp): string | null {
+  const fileName = path.basename(filePath, '.jsonl')
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    let actualSessionId: string | null = null
+    let matched = false
+
+    for (const line of content.split('\n')) {
+      if (!line.trim()) continue
+      try {
+        const json = JSON.parse(line)
+        // sessionId 캡처 — parseClaudeSession과 동일하게 덮어쓰기 방식
+        if (json.sessionId) actualSessionId = json.sessionId
+        if (!matched && (json.type === 'user' || json.type === 'assistant')) {
+          const msgObj = json.message
+          if (msgObj) {
+            let text = ''
+            if (typeof msgObj.content === 'string') {
+              text = msgObj.content
+            } else if (Array.isArray(msgObj.content)) {
+              for (const item of msgObj.content) {
+                if (item.type === 'text') text += item.text || ''
+              }
+            }
+            if (text && pattern.test(text)) matched = true
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    if (matched) return actualSessionId || fileName
+  } catch { /* skip */ }
+  return null
+}
 
 // ─── IPC: Obsidian 연동 ────────────────────────────────────
 
@@ -563,7 +840,6 @@ function buildFrontmatter(existing: string | null, payload: UpsertPayload): stri
   const lines = body.split('\n')
   const out: string[] = []
   const seen = new Set<string>()
-  let inMultilineValue = false
 
   for (const line of lines) {
     // 들여쓴 라인(리스트 항목 등)은 그대로 유지
@@ -571,7 +847,6 @@ function buildFrontmatter(existing: string | null, payload: UpsertPayload): stri
       out.push(line)
       continue
     }
-    inMultilineValue = false
     // 키 추출 — 키에 공백 허용 ("date modified")
     const m = line.match(/^([\w][\w -]*?):\s*(.*)$/)
     if (!m) {
@@ -579,16 +854,12 @@ function buildFrontmatter(existing: string | null, payload: UpsertPayload): stri
       continue
     }
     const key = m[1]
-    const value = m[2]
     if (managed[key] !== undefined) {
       out.push(`${key}: ${managed[key]}`)
       seen.add(key)
     } else {
       out.push(line)
-      // 값이 비어있으면 뒤따르는 리스트/블록 항목을 보존하기 위한 마커
-      if (value === '') inMultilineValue = true
     }
-    void inMultilineValue
   }
 
   // 누락된 관리 필드 추가 (기존 노트에 cmdtrace_* 가 아직 없는 경우 최초 동기화)
@@ -835,6 +1106,229 @@ ipcMain.handle('session:export', async (_event, content: string, format: string,
     console.error('내보내기 실패:', err)
     return { success: false }
   }
+})
+
+// ─── IPC: AI 요약 ──────────────────────────────────────────
+const ALLOWED_PROVIDERS = new Set(['anthropic', 'openai', 'claude-cli'])
+
+// claude -p 방식 — 기존 Claude Code OAuth 세션 재사용 (API 키 불필요)
+function summarizeViaCLI(transcript: string): Promise<{ ok: boolean; summary?: string; error?: string }> {
+  return new Promise((resolve) => {
+    const prompt = `다음 AI 코딩 세션을 한국어로 3~5개 불릿 포인트로 요약해주세요. 완성된 작업, 핵심 결정, 미해결 이슈 위주로 간결하게 작성하세요:\n\n${transcript}`
+    const proc = spawn('claude', ['-p', '--model', 'claude-haiku-4-5-20251001'], { shell: false })
+    let out = ''
+    let errOut = ''
+    const timer = setTimeout(() => { proc.kill(); resolve({ ok: false, error: 'claude -p 시간 초과 (30s)' }) }, 30000)
+    proc.stdout.on('data', (d: Buffer) => { out += d.toString() })
+    proc.stderr.on('data', (d: Buffer) => { errOut += d.toString() })
+    proc.on('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0 && out.trim()) {
+        resolve({ ok: true, summary: out.trim() })
+      } else {
+        resolve({ ok: false, error: errOut.trim() || `claude -p 종료 코드 ${code}` })
+      }
+    })
+    proc.on('error', (err: Error) => {
+      clearTimeout(timer)
+      resolve({ ok: false, error: `claude CLI를 찾을 수 없습니다: ${err.message}` })
+    })
+    try { proc.stdin.write(prompt); proc.stdin.end() } catch { /* stdin 쓰기 실패 무시 */ }
+  })
+}
+
+ipcMain.handle('session:summarize', async (
+  _event,
+  messages: { role: string; content: string }[],
+  provider: string,
+  apiKey: string
+) => {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { ok: false, error: '요약할 메시지가 없습니다.' }
+  }
+  // P1-2: 배열 크기 상한 — 대형 IPC 페이로드 방지
+  if (messages.length > 500) {
+    return { ok: false, error: '메시지 수가 너무 많습니다 (최대 500개).' }
+  }
+  if (typeof provider !== 'string' || !ALLOWED_PROVIDERS.has(provider)) {
+    return { ok: false, error: '지원하지 않는 AI 제공자입니다.' }
+  }
+  // claude-cli는 API 키 불필요 — 이후 처리로 바로 넘김
+  let resolvedKey: string | null = null
+  if (provider !== 'claude-cli') {
+    // 1순위: safeStorage에 저장된 키, 2순위: 호출 인자로 전달된 키 (legacy)
+    resolvedKey = getApiKey(provider as KeyProvider) ?? (typeof apiKey === 'string' ? apiKey.trim() : null)
+    if (!resolvedKey || resolvedKey.length < 20) {
+      return { ok: false, error: 'API 키가 등록되지 않았습니다. 설정에서 등록해주세요.' }
+    }
+    // P2-1: API 키 prefix 검증
+    if (provider === 'anthropic' && !resolvedKey.startsWith('sk-ant-')) {
+      return { ok: false, error: 'Anthropic API 키 형식이 잘못되었습니다 (sk-ant- 로 시작해야 합니다).' }
+    }
+    if (provider === 'openai' && !resolvedKey.startsWith('sk-')) {
+      return { ok: false, error: 'OpenAI API 키 형식이 잘못되었습니다 (sk- 로 시작해야 합니다).' }
+    }
+  }
+
+  // 메시지를 텍스트로 변환 (과도한 컨텍스트 방지 — 최대 6000자)
+  let transcript = ''
+  for (const msg of messages) {
+    if (typeof msg.role !== 'string' || typeof msg.content !== 'string') continue
+    const role = msg.role === 'user' ? '[사용자]' : '[AI]'
+    const snippet = msg.content.replace(/\n+/g, ' ').slice(0, 500)
+    transcript += `${role}: ${snippet}\n`
+    if (transcript.length > 6000) { transcript += '...'; break }
+  }
+
+  // claude -p 방식 — API 키 불필요, Claude Code OAuth 재사용
+  if (provider === 'claude-cli') return summarizeViaCLI(transcript)
+
+  const systemPrompt = 'You are a concise technical summarizer. Summarize the AI coding session in Korean. Provide 3-5 bullet points covering: what was accomplished, key technical decisions, and any open issues. Be direct and specific.'
+  const userPrompt = `다음 AI 코딩 세션을 한국어로 3~5개 불릿 포인트로 요약해주세요:\n\n${transcript}`
+
+  if (provider === 'anthropic') return callAnthropicAPI(resolvedKey!, systemPrompt, userPrompt)
+  return callOpenAIAPI(resolvedKey!, systemPrompt, userPrompt)
+})
+
+function callAnthropicAPI(apiKey: string, system: string, user: string): Promise<{ ok: boolean; summary?: string; error?: string }> {
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      system,
+      messages: [{ role: 'user', content: user }],
+    })
+    const req = https.request({
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: 30000,
+    }, (res) => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => {
+        // P2-2: HTTP 상태코드 먼저 확인
+        if (res.statusCode && res.statusCode >= 400) {
+          try {
+            const json = JSON.parse(data)
+            return resolve({ ok: false, error: json.error?.message || `HTTP ${res.statusCode}` })
+          } catch { return resolve({ ok: false, error: `HTTP ${res.statusCode}` }) }
+        }
+        try {
+          const json = JSON.parse(data)
+          if (json.content?.[0]?.text) return resolve({ ok: true, summary: json.content[0].text })
+          if (json.error) return resolve({ ok: false, error: json.error.message || 'Anthropic API 오류' })
+          resolve({ ok: false, error: '예상치 못한 응답 형식' })
+        } catch { resolve({ ok: false, error: '응답 파싱 실패' }) }
+      })
+    })
+    req.on('error', (err: Error) => resolve({ ok: false, error: err.message }))
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: '요청 시간 초과 (30s)' }) })
+    req.write(body)
+    req.end()
+  })
+}
+
+function callOpenAIAPI(apiKey: string, system: string, user: string): Promise<{ ok: boolean; summary?: string; error?: string }> {
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      model: 'gpt-4o-mini',
+      max_tokens: 600,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    })
+    const req = https.request({
+      hostname: 'api.openai.com',
+      path: '/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: 30000,
+    }, (res) => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => {
+        // P2-2: HTTP 상태코드 먼저 확인
+        if (res.statusCode && res.statusCode >= 400) {
+          try {
+            const json = JSON.parse(data)
+            return resolve({ ok: false, error: json.error?.message || `HTTP ${res.statusCode}` })
+          } catch { return resolve({ ok: false, error: `HTTP ${res.statusCode}` }) }
+        }
+        try {
+          const json = JSON.parse(data)
+          if (json.choices?.[0]?.message?.content) return resolve({ ok: true, summary: json.choices[0].message.content })
+          if (json.error) return resolve({ ok: false, error: json.error.message || 'OpenAI API 오류' })
+          resolve({ ok: false, error: '예상치 못한 응답 형식' })
+        } catch { resolve({ ok: false, error: '응답 파싱 실패' }) }
+      })
+    })
+    req.on('error', (err: Error) => resolve({ ok: false, error: err.message }))
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: '요청 시간 초과 (30s)' }) })
+    req.write(body)
+    req.end()
+  })
+}
+
+// ─── IPC: ccusage 사용량 데이터 ────────────────────────────
+interface CcUsageDay { date: string; cost: number; inputTokens: number; outputTokens: number; cacheWriteTokens?: number; cacheReadTokens?: number }
+interface CcUsageData { totalCost: number; totalInputTokens: number; totalOutputTokens: number; daily: CcUsageDay[] }
+
+ipcMain.handle('usage:load', () => {
+  return new Promise<{ ok: boolean; data?: CcUsageData; error?: string }>((resolve) => {
+    // ccusage JSON 출력 시도 (전역 설치 우선, npx 폴백)
+    // shell: false 유지 (기존 보안 패턴과 일관성)
+    // spawn에는 timeout 옵션이 없으므로 수동 타임아웃 구현
+    const tryCmd = (cmd: string, args: string[]) => {
+      return new Promise<string | null>((res) => {
+        const proc = spawn(cmd, args, { shell: false })
+        let out = ''
+        const timer = setTimeout(() => { proc.kill(); res(null) }, 15000)
+        proc.stdout.on('data', (d: Buffer) => { out += d.toString() })
+        proc.on('close', (code) => { clearTimeout(timer); res(code === 0 ? out : null) })
+        proc.on('error', () => { clearTimeout(timer); res(null) })
+      })
+    }
+
+    ;(async () => {
+      let raw: string | null = null
+      // 1차: 전역 ccusage
+      raw = await tryCmd('ccusage', ['--json'])
+      // 2차: npx
+      if (!raw) raw = await tryCmd('npx', ['-y', 'ccusage@latest', '--json'])
+      if (!raw) { resolve({ ok: false, error: 'ccusage를 찾을 수 없습니다. npm install -g ccusage 로 설치하세요.' }); return }
+
+      try {
+        const parsed = JSON.parse(raw)
+        // ccusage JSON 구조 정규화 (버전별 차이 대응)
+        const days: CcUsageDay[] = (parsed.daily ?? parsed.days ?? []).map((d: Record<string, unknown>) => ({
+          date: String(d.date ?? ''),
+          cost: Number(d.cost ?? d.totalCost ?? 0),
+          inputTokens: Number(d.inputTokens ?? d.input_tokens ?? 0),
+          outputTokens: Number(d.outputTokens ?? d.output_tokens ?? 0),
+          cacheWriteTokens: Number(d.cacheWriteTokens ?? d.cache_creation_input_tokens ?? 0),
+          cacheReadTokens: Number(d.cacheReadTokens ?? d.cache_read_input_tokens ?? 0),
+        }))
+        const totalCost = Number(parsed.totalCost ?? parsed.total_cost ?? days.reduce((s, d) => s + d.cost, 0))
+        const totalInputTokens = Number(parsed.totalInputTokens ?? days.reduce((s, d) => s + d.inputTokens, 0))
+        const totalOutputTokens = Number(parsed.totalOutputTokens ?? days.reduce((s, d) => s + d.outputTokens, 0))
+        resolve({ ok: true, data: { totalCost, totalInputTokens, totalOutputTokens, daily: days.slice(-30) } })
+      } catch {
+        resolve({ ok: false, error: 'ccusage 출력 파싱 실패' })
+      }
+    })()
+  })
 })
 
 // ─── Claude 세션 로더 ──────────────────────────────────────
@@ -1174,6 +1668,45 @@ if (!gotTheLock) {
   })
 }
 
+// ─── 파일 감시 (새 세션 자동 감지) ───────────────────────
+// Windows 전용 — recursive 옵션은 macOS/Windows만 지원 (Linux 미지원)
+const fileWatchers: fs.FSWatcher[] = []
+
+function watchDir(dirPath: string, win: BrowserWindow, debounceTimer: { ref: ReturnType<typeof setTimeout> | null }) {
+  if (!fs.existsSync(dirPath)) return
+  try {
+    const watcher = fs.watch(dirPath, { recursive: true }, (_eventType: string, filename: string | null) => {
+      if (!filename) return
+      // Claude: .jsonl 파일, OpenCode: .json 파일
+      if (!filename.endsWith('.jsonl') && !filename.endsWith('.json')) return
+      if (debounceTimer.ref) clearTimeout(debounceTimer.ref)
+      debounceTimer.ref = setTimeout(() => {
+        if (!win.isDestroyed()) win.webContents.send('sessions:changed')
+      }, 1500)
+    })
+    fileWatchers.push(watcher)
+  } catch (err) {
+    console.error('[filewatch] 감시 설정 실패:', dirPath, err)
+  }
+}
+
+function setupFileWatcher(win: BrowserWindow) {
+  const debounceTimer = { ref: null as ReturnType<typeof setTimeout> | null }
+  // Claude Code 세션 감시
+  watchDir(CLAUDE_BASE, win, debounceTimer)
+  // OpenCode 세션 감시
+  const openCodeBase = path.join(os.homedir(), '.local', 'share', 'opencode', 'storage', 'message')
+  watchDir(openCodeBase, win, debounceTimer)
+}
+
+// P1-1: 앱 종료 시 watcher 정리 (파일 디스크립터 누수 방지)
+app.on('before-quit', () => {
+  for (const w of fileWatchers) {
+    try { w.close() } catch { /* ignore */ }
+  }
+  fileWatchers.length = 0
+})
+
 // ─── 앱 초기화 ─────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow()
@@ -1211,6 +1744,9 @@ app.whenReady().then(() => {
   } catch (err) {
     console.error('Tray 초기화 실패:', err)
   }
+
+  // 파일 감시 시작 — 새 세션 생성 시 renderer에 sessions:changed 전송
+  if (mainWindow) setupFileWatcher(mainWindow)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -16,6 +16,8 @@ export interface Session {
   isFavorited?: boolean
   isPinned?: boolean
   projectId?: string
+  summary?: string
+  summaryAt?: string
 }
 
 // ─── 프로젝트 ─────────────────────────────────────────────
@@ -125,12 +127,19 @@ export interface ObsidianImportCandidate {
   hasCmdtraceId: boolean
 }
 
+export interface AiSummarySettings {
+  provider: 'anthropic' | 'openai' | 'claude-cli'
+  /** @deprecated 평문 API 키. safeStorage(`apiKey:save`)로 마이그레이션됨. 호환을 위해 옵셔널로 유지. */
+  apiKey?: string
+}
+
 export interface AppSettings {
   terminal: TerminalType
   theme: ThemeType
   bypassPermissions: boolean
   agentType: AgentType
   obsidian?: ObsidianSettings
+  aiSummary?: AiSummarySettings
 }
 
 // ─── Electron API 타입 ────────────────────────────────────
@@ -158,11 +167,24 @@ declare global {
       upsertObsidianProjectNote: (payload: UpsertProjectNotePayload) => Promise<{ ok: boolean; path?: string; error?: string }>
       scanObsidianImportCandidates: () => Promise<{ ok: boolean; candidates?: ObsidianImportCandidate[]; error?: string }>
       backfillObsidianCmdtraceId: (notePath: string, projectId: string) => Promise<{ ok: boolean; error?: string }>
-      // 딥링크
-      onDeepLink: (callback: (url: string) => void) => void
+      // 딥링크 — cleanup 함수 반환
+      onDeepLink: (callback: (url: string) => void) => (() => void)
       // 워크스페이스
       saveWorkspaces: (data: Workspace[]) => Promise<{ success: boolean }>
       loadWorkspaces: () => Promise<Workspace[]>
+      restoreWorkspace: (entries: { sessionId: string; projectPath: string; agentType: string; title: string }[], terminal: string, bypass: boolean) => Promise<{ success: boolean; error?: string }>
+      // 컨텐츠 검색 (content:/regex: 연산자)
+      searchContent: (query: string, isRegex: boolean, agentType: string) => Promise<string[]>
+      // ccusage 사용량
+      loadUsage: () => Promise<{ ok: boolean; data?: { totalCost: number; totalInputTokens: number; totalOutputTokens: number; daily: { date: string; cost: number; inputTokens: number; outputTokens: number }[] }; error?: string }>
+      // AI 요약
+      summarizeSession: (messages: { role: string; content: string }[], provider: string, apiKey: string) => Promise<{ ok: boolean; summary?: string; error?: string }>
+      // API 키 관리 (safeStorage)
+      saveApiKey: (provider: string, key: string) => Promise<{ ok: boolean; error?: string }>
+      hasApiKey: (provider: string) => Promise<{ hasKey: boolean }>
+      deleteApiKey: (provider: string) => Promise<{ ok: boolean; error?: string }>
+      // 파일 감시 이벤트 — 반환값은 cleanup 함수
+      onSessionsChanged: (callback: () => void) => (() => void)
     }
   }
 }

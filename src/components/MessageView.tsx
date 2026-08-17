@@ -1,13 +1,92 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import type { Message } from '../types'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { useDarkMode } from '../hooks/useDarkMode'
+import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript'
+import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript'
+import python from 'react-syntax-highlighter/dist/esm/languages/prism/python'
+import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash'
+import json from 'react-syntax-highlighter/dist/esm/languages/prism/json'
+import css from 'react-syntax-highlighter/dist/esm/languages/prism/css'
+import markup from 'react-syntax-highlighter/dist/esm/languages/prism/markup'
+
+SyntaxHighlighter.registerLanguage('typescript', typescript)
+SyntaxHighlighter.registerLanguage('ts', typescript)
+SyntaxHighlighter.registerLanguage('javascript', javascript)
+SyntaxHighlighter.registerLanguage('js', javascript)
+SyntaxHighlighter.registerLanguage('python', python)
+SyntaxHighlighter.registerLanguage('py', python)
+SyntaxHighlighter.registerLanguage('bash', bash)
+SyntaxHighlighter.registerLanguage('sh', bash)
+SyntaxHighlighter.registerLanguage('json', json)
+SyntaxHighlighter.registerLanguage('css', css)
+SyntaxHighlighter.registerLanguage('html', markup)
+SyntaxHighlighter.registerLanguage('xml', markup)
+import type { Components } from 'react-markdown'
 
 interface Props {
   messages: Message[]
 }
 
+// GFM 지원 컴포넌트 — isDark prop으로 syntax highlighter 테마 전환
+function makeMarkdownComponents(isDark: boolean): Components {
+  return {
+  code({ className, children, ...rest }) {
+    const match = /language-(\w+)/.exec(className || '')
+    const isInline = !match && !(rest as { node?: unknown }).node
+    if (isInline) {
+      return (
+        <code className="bg-surface-soft border border-border text-brand-600 dark:text-brand-300 px-1 py-0.5 rounded text-[0.85em] font-mono" {...rest}>
+          {children}
+        </code>
+      )
+    }
+    return (
+      <SyntaxHighlighter
+        style={isDark ? oneDark : oneLight}
+        language={match ? match[1] : 'text'}
+        PreTag="div"
+        className="!rounded-lg !border !border-border !text-xs !my-2"
+        customStyle={{ margin: 0 }}
+      >
+        {String(children).replace(/\n$/, '')}
+      </SyntaxHighlighter>
+    )
+  },
+  table({ children }) {
+    return (
+      <div className="overflow-x-auto my-2">
+        <table className="text-xs border-collapse w-full">{children}</table>
+      </div>
+    )
+  },
+  th({ children }) {
+    return <th className="border border-border px-2 py-1 bg-surface-soft text-ink-secondary font-semibold text-left">{children}</th>
+  },
+  td({ children }) {
+    return <td className="border border-border px-2 py-1 text-ink-primary">{children}</td>
+  },
+  input({ type, checked }) {
+    if (type === 'checkbox') {
+      return <input type="checkbox" checked={checked} readOnly className="mr-1.5 accent-brand-500" />
+    }
+    return null
+  },
+  a({ href, children }) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand-500 hover:underline">
+        {children}
+      </a>
+    )
+  },
+}}
+
 export default function MessageView({ messages }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const isDark = useDarkMode()
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'instant' })
@@ -24,14 +103,16 @@ export default function MessageView({ messages }: Props) {
   return (
     <div className="h-full overflow-y-auto scrollbar-thin px-5 py-5 space-y-4 selectable">
       {messages.map((msg, idx) => (
-        <MessageBubble key={idx} message={msg} />
+        <MessageBubble key={`${msg.timestamp ?? ''}-${idx}`} message={msg} isDark={isDark} />
       ))}
       <div ref={bottomRef} />
     </div>
   )
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message, isDark }: { message: Message; isDark: boolean }) {
+  // isDark 변경 시에만 재생성 (매 렌더마다 새 객체 방지)
+  const components = useMemo(() => makeMarkdownComponents(isDark), [isDark])
   const isUser = message.role === 'user'
 
   return (
@@ -69,13 +150,15 @@ function MessageBubble({ message }: { message: Message }) {
           )}
         </div>
 
-        {/* 내용 */}
+        {/* 내용 — remark-gfm으로 테이블·체크박스·취소선 지원 */}
         <div className={`prose prose-sm max-w-none ${
           isUser
             ? 'prose-invert'
-            : 'prose-neutral prose-pre:bg-surface-soft prose-pre:border prose-pre:border-border prose-code:text-brand-600 prose-code:bg-brand-50 prose-code:px-1 prose-code:rounded prose-code:text-xs'
+            : 'prose-neutral prose-pre:p-0 prose-pre:bg-transparent prose-pre:border-0 prose-code:text-brand-600 prose-code:bg-brand-50 prose-code:px-1 prose-code:rounded prose-code:text-xs'
         }`}>
-          <ReactMarkdown>{message.content}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+            {message.content}
+          </ReactMarkdown>
         </div>
       </div>
     </div>

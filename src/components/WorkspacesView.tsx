@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Layers, Play, Trash2, Edit2, Check, X, Loader2 } from 'lucide-react'
-import type { Workspace, AppSettings } from '../types'
+import type { Workspace, WorkspaceEntry, AppSettings } from '../types'
 import { formatDistanceToNow } from 'date-fns'
 import { ko } from 'date-fns/locale'
 
@@ -13,32 +13,51 @@ interface Props {
 
 export default function WorkspacesView({ workspaces, settings, onDelete, onRename }: Props) {
   const [resumingId, setResumingId] = useState<string | null>(null)
+  // 개별 세션 실행 로딩 — "${wsId}:${sessionRecordId}" 형태로 추적
+  const [resumingEntryKey, setResumingEntryKey] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [restoreError, setRestoreError] = useState<string | null>(null)
 
+  const handleResumeEntry = async (ws: Workspace, entry: WorkspaceEntry) => {
+    if (!window.electronAPI || resumingId || resumingEntryKey) return
+    const key = `${ws.id}:${entry.sessionRecordId}`
+    setResumingEntryKey(key)
+    try {
+      const res = await window.electronAPI.resumeSession(
+        entry.sessionId,
+        entry.projectPath,
+        settings.terminal,
+        settings.bypassPermissions,
+        entry.agentType || 'claude'
+      )
+      if (!res.success) setRestoreError(`"${entry.title}" 재개 실패: ${res.error || '알 수 없는 오류'}`)
+    } finally {
+      setResumingEntryKey(null)
+    }
+  }
+
   const handleRestoreAll = async (ws: Workspace) => {
     if (!window.electronAPI || resumingId) return
     setResumingId(ws.id)
     setRestoreError(null)
-    const failed: string[] = []
     try {
-      await window.electronAPI.resetPanes()
       const sorted = [...ws.entries].sort((a, b) => a.order - b.order)
-      for (const entry of sorted) {
-        const res = await window.electronAPI.resumeSession(
-          entry.sessionId,
-          entry.projectPath,
-          settings.terminal,
-          settings.bypassPermissions,
-          entry.agentType || 'claude'
-        )
-        if (!res.success) failed.push(entry.title)
-        await new Promise(r => setTimeout(r, 300))
-      }
-      if (failed.length > 0) {
-        setRestoreError(`${failed.length}개 세션 재개 실패: ${failed.slice(0, 2).join(', ')}${failed.length > 2 ? ' 외' : ''}`)
+      const entries = sorted.map(e => ({
+        sessionId: e.sessionId,
+        projectPath: e.projectPath,
+        agentType: e.agentType || 'claude',
+        title: e.title,
+      }))
+      // 단일 wt 호출 — 모든 pane 명령을 체이닝해서 타이밍 경쟁 없이 순서 보장
+      const res = await window.electronAPI.restoreWorkspace(
+        entries,
+        settings.terminal,
+        settings.bypassPermissions
+      )
+      if (!res.success) {
+        setRestoreError(res.error || '워크스페이스 복원 실패')
       }
     } finally {
       setResumingId(null)
@@ -135,19 +154,38 @@ export default function WorkspacesView({ workspaces, settings, onDelete, onRenam
                   </span>
                 </div>
 
-                {/* 세션 타이틀 칩 */}
-                <div className="flex flex-wrap gap-1">
+                {/* 세션 타이틀 칩 — 클릭 시 개별 세션 재개 */}
+                <div className="flex flex-wrap gap-1 mt-1">
                   {[...ws.entries]
                     .sort((a, b) => a.order - b.order)
-                    .map(entry => (
-                      <span
-                        key={entry.sessionRecordId}
-                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-surface-subtle text-ink-secondary rounded-full border border-border"
-                      >
-                        <span className="text-ink-faint font-mono">{entry.order}.</span>
-                        <span className="truncate max-w-[140px]">{entry.title}</span>
-                      </span>
-                    ))
+                    .map(entry => {
+                      const key = `${ws.id}:${entry.sessionRecordId}`
+                      const isLoading = resumingEntryKey === key
+                      const isDisabled = !!resumingId || !!resumingEntryKey
+
+                      return (
+                        <button
+                          key={entry.sessionRecordId}
+                          onClick={() => handleResumeEntry(ws, entry)}
+                          disabled={isDisabled}
+                          title={`"${entry.title}" 개별 재개`}
+                          className={`group inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border transition-colors
+                            ${isLoading
+                              ? 'bg-brand-50 border-brand-200 text-brand-600'
+                              : isDisabled
+                                ? 'bg-surface-subtle border-border text-ink-faint cursor-not-allowed'
+                                : 'bg-surface-subtle border-border text-ink-secondary hover:bg-brand-50 hover:border-brand-200 hover:text-brand-700 cursor-pointer'
+                            }`}
+                        >
+                          {isLoading
+                            ? <Loader2 size={9} className="shrink-0 animate-spin" />
+                            : <Play size={9} className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          }
+                          <span className="text-ink-faint font-mono">{entry.order}.</span>
+                          <span className="truncate max-w-[140px]">{entry.title}</span>
+                        </button>
+                      )
+                    })
                   }
                 </div>
               </div>
@@ -173,7 +211,7 @@ export default function WorkspacesView({ workspaces, settings, onDelete, onRenam
                   <>
                     <button
                       onClick={() => handleRestoreAll(ws)}
-                      disabled={!!resumingId}
+                      disabled={!!resumingId || !!resumingEntryKey}
                       className="btn-primary disabled:opacity-50"
                     >
                       {resumingId === ws.id

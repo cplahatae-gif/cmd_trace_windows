@@ -104,4 +104,70 @@
   .btn-secondary {
     @apply inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-surface-soft hover:bg-surface-subtle text-ink-primary text-xs font-medium rounded-lg border border-border transition-colors;
   }
+
+  /* ─── 다크 모드 상태 색상 재정의 ─────────────────────────
+   * Tailwind 정적 컬러 클래스는 dark: prefix 없이는 자동 전환 안 됨.
+   * 컴포넌트에서 자주 쓰이는 status 색상을 CSS에서 일괄 오버라이드.
+   */
+  .dark .bg-red-50   { background-color: rgb(68 15 15 / 0.7) !important; }
+  .dark .bg-red-500  { background-color: #ef4444; }
+  .dark .text-red-600 { color: #f87171 !important; }
+  .dark .border-red-100 { border-color: rgb(127 29 29 / 0.4) !important; }
+  .dark .text-red-400  { color: #fca5a5; }
+
+  .dark .bg-green-50  { background-color: rgb(5 46 22 / 0.7) !important; }
+  .dark .text-green-600 { color: #4ade80 !important; }
+  .dark .text-green-700 { color: #86efac !important; }
+  .dark .border-green-200 { border-color: rgb(21 128 61 / 0.4) !important; }
+  .dark .bg-green-100  { background-color: rgb(5 46 22 / 0.8) !important; }
+
+  .dark .bg-amber-50  { background-color: rgb(41 23 5 / 0.7) !important; }
+  .dark .bg-amber-100 { background-color: rgb(41 23 5 / 0.85) !important; }
+  .dark .text-amber-500 { color: #fbbf24 !important; }
+  .dark .text-amber-600 { color: #fbbf24 !important; }
+  .dark .text-amber-700 { color: #fcd34d !important; }
+  .dark .border-amber-100 { border-color: rgb(120 53 15 / 0.4) !important; }
+
+  .dark .bg-blue-50  { background-color: rgb(8 20 48 / 0.7) !important; }
+  .dark .bg-blue-100 { background-color: rgb(8 20 48 / 0.85) !important; }
+  .dark .text-blue-600 { color: #60a5fa !important; }
+  .dark .text-blue-700 { color: #93c5fd !important; }
+  .dark .border-blue-100 { border-color: rgb(30 64 175 / 0.4) !important; }
+  .dark .border-blue-200 { border-color: rgb(30 64 175 / 0.5) !important; }
+
+  .dark .bg-purple-50 { background-color: rgb(30 10 50 / 0.7) !important; }
+  .dark .text-purple-600 { color: #c084fc !important; }
+
+  /* brand-50 backgrounds (태그, 배지 등) */
+  .dark .bg-brand-50 { background-color: rgb(99 91 255 / 0.12) !important; }
+  .dark .text-brand-600 { color: #a5b4fc !important; }
+  .dark .text-brand-700 { color: #c7d2fe !important; }
+  .dark .border-brand-100 { border-color: rgb(99 91 255 / 0.25) !important; }
+  .dark .border-brand-200 { border-color: rgb(99 91 255 / 0.3) !important; }
+
+  /* 에러 배너 (App.tsx, WorkspacesView 등) */
+  .dark .bg-red-900\/20 { background-color: rgb(127 29 29 / 0.2); }
+
+  /* Prose 다크 모드 — Markdown 렌더링 */
+  .dark .prose { color: var(--ink-primary); }
+  .dark .prose h1, .dark .prose h2, .dark .prose h3 { color: var(--ink-primary); }
+  .dark .prose strong { color: var(--ink-secondary); }
+  .dark .prose a { color: #818cf8; }
+  .dark .prose code { color: #a5b4fc; background-color: rgb(99 91 255 / 0.12); }
+  .dark .prose pre { background-color: #1e2030 !important; border-color: rgba(255,255,255,0.08) !important; }
+  .dark .prose blockquote { border-color: rgba(255,255,255,0.2); color: var(--ink-muted); }
+  .dark .prose thead { border-color: rgba(255,255,255,0.1); }
+  .dark .prose tbody tr { border-color: rgba(255,255,255,0.06); }
+
+  /* 검색 하이라이트 */
+  .search-highlight {
+    background-color: rgb(251 191 36 / 0.35);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+  .dark .search-highlight {
+    background-color: rgb(251 191 36 / 0.25);
+    color: #fde68a;
+  }
 }

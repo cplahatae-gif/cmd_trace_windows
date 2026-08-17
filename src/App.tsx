@@ -11,6 +11,7 @@ import ProjectsView from './components/ProjectsView'
 import ProjectDetailView from './components/ProjectDetailView'
 import WorkspacesView from './components/WorkspacesView'
 import WorkspaceModal from './components/WorkspaceModal'
+import BulkSummarizeModal from './components/BulkSummarizeModal'
 import type { ProjectFormData } from './components/ProjectModal'
 import { formatDistanceToNow } from 'date-fns'
 import { ko } from 'date-fns/locale'
@@ -40,12 +41,13 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [activeView, setActiveView] = useState<ActiveView>('sessions')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
-  const [metadata, setMetadata] = useState<Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string }>>({})
+  const [metadata, setMetadata] = useState<Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string; summary?: string; summaryAt?: string }>>({})
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set())
   const [showSaveWorkspaceModal, setShowSaveWorkspaceModal] = useState(false)
+  const [showBulkSummarizeModal, setShowBulkSummarizeModal] = useState(false)
   const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set())
 
   // 테마 적용 — settings.theme 변경 시 .dark 클래스 토글
@@ -92,7 +94,7 @@ export default function App() {
     setError(null)
     try {
       const raw  = await window.electronAPI.loadSessions(settings.agentType)
-      const meta = await window.electronAPI.loadMetadata() as Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string }>
+      const meta = await window.electronAPI.loadMetadata() as Record<string, { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string; summary?: string; summaryAt?: string }>
       setMetadata(meta)
 
       const merged = raw.map(s => ({
@@ -103,6 +105,8 @@ export default function App() {
         isFavorited: meta[s.id]?.isFavorited ?? false,
         isPinned: meta[s.id]?.isPinned ?? false,
         projectId: meta[s.id]?.projectId ?? undefined,
+        summary: meta[s.id]?.summary,
+        summaryAt: meta[s.id]?.summaryAt,
       }))
       setSessions(merged)
     } catch (err) {
@@ -114,6 +118,12 @@ export default function App() {
   }, [settings.agentType])
 
   useEffect(() => { loadSessions() }, [loadSessions])
+
+  // 파일 감시 — 새 세션 JSONL 생성 시 자동 새로고침 (cleanup으로 누적 등록 방지)
+  useEffect(() => {
+    const cleanup = window.electronAPI?.onSessionsChanged?.(() => { loadSessions() })
+    return () => cleanup?.()
+  }, [loadSessions])
 
   // 실행 중인 세션 10초마다 폴링
   useEffect(() => {
@@ -163,55 +173,73 @@ export default function App() {
     return { operators, plain }
   }
 
-  // 검색 + 태그 필터 (활성 세션에만 적용) + 검색 연산자
+  // 검색 + 태그 필터 (활성 세션에만 적용) + 검색 연산자 (content:/regex: 비동기)
   useEffect(() => {
-    let result = activeSessions
-    if (selectedTag) result = result.filter(s => s.tags.includes(selectedTag))
+    let cancelled = false
 
-    if (searchQuery.trim()) {
-      const { operators, plain } = parseSearchQuery(searchQuery)
+    ;(async () => {
+      let result = [...activeSessions]
+      if (selectedTag) result = result.filter(s => s.tags.includes(selectedTag))
 
-      if (operators.tag) result = result.filter(s => s.tags.includes(operators.tag))
-      if (operators.project) {
-        const proj = operators.project.toLowerCase()
-        result = result.filter(s => s.project.toLowerCase().includes(proj))
-      }
-      if (operators.is === 'favorited') result = result.filter(s => s.isFavorited)
-      if (operators.is === 'pinned') result = result.filter(s => s.isPinned)
-      if (operators.date) {
-        const target = new Date(operators.date)
-        if (!isNaN(target.getTime())) {
-          result = result.filter(s => {
-            const d = new Date(s.lastActivity)
-            return d.toDateString() === target.toDateString()
-          })
+      if (searchQuery.trim()) {
+        const { operators, plain } = parseSearchQuery(searchQuery)
+
+        // content: / regex: — 비동기 IPC로 JSONL 본문 전체 검색
+        if (operators.content || operators.regex) {
+          const q = operators.content || operators.regex
+          const isRx = !!operators.regex
+          const ids = await window.electronAPI?.searchContent(q, isRx, settings.agentType).catch(() => null)
+          if (cancelled) return
+          if (ids) {
+            const idSet = new Set(ids)
+            result = result.filter(s => idSet.has(s.id))
+          }
+        }
+
+        if (operators.tag) result = result.filter(s => s.tags.includes(operators.tag))
+        if (operators.project) {
+          const proj = operators.project.toLowerCase()
+          result = result.filter(s => s.project.toLowerCase().includes(proj))
+        }
+        if (operators.is === 'favorited') result = result.filter(s => s.isFavorited)
+        if (operators.is === 'pinned') result = result.filter(s => s.isPinned)
+        if (operators.date) {
+          const target = new Date(operators.date)
+          if (!isNaN(target.getTime())) {
+            result = result.filter(s => {
+              const d = new Date(s.lastActivity)
+              return d.toDateString() === target.toDateString()
+            })
+          }
+        }
+
+        if (plain) {
+          const q = plain.toLowerCase()
+          result = result.filter(s =>
+            s.preview.toLowerCase().includes(q) ||
+            s.project.toLowerCase().includes(q) ||
+            (s.customName ?? '').toLowerCase().includes(q) ||
+            s.tags.some(t => t.toLowerCase().includes(q))
+          )
         }
       }
 
-      if (plain) {
-        const q = plain.toLowerCase()
-        result = result.filter(s =>
-          s.preview.toLowerCase().includes(q) ||
-          s.project.toLowerCase().includes(q) ||
-          (s.customName ?? '').toLowerCase().includes(q) ||
-          s.tags.some(t => t.toLowerCase().includes(q))
-        )
-      }
-    }
+      // 핀 우선 정렬
+      result = result.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1
+        if (!a.isPinned && b.isPinned) return 1
+        return 0
+      })
 
-    // 핀 우선 정렬
-    result = [...result].sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1
-      if (!a.isPinned && b.isPinned) return 1
-      return 0
-    })
+      if (!cancelled) setFilteredSessions(result)
+    })()
 
-    setFilteredSessions(result)
-  }, [searchQuery, activeSessions, selectedTag])
+    return () => { cancelled = true }
+  }, [searchQuery, activeSessions, selectedTag, settings.agentType])
 
-  // 딥링크 수신 (cmdtrace://project/{id})
+  // 딥링크 수신 (cmdtrace://project/{id}) — cleanup으로 누적 등록 방지
   useEffect(() => {
-    window.electronAPI?.onDeepLink?.((url: string) => {
+    const cleanup = window.electronAPI?.onDeepLink?.((url: string) => {
       const projectMatch = url.match(/cmdtrace:\/\/project\/(.+)/)
       if (projectMatch) {
         const projectId = decodeURIComponent(projectMatch[1])
@@ -228,6 +256,7 @@ export default function App() {
         }
       }
     })
+    return () => cleanup?.()
   }, [sessions])
 
   // 뷰 전환 시 프로젝트 상세 초기화
@@ -256,22 +285,67 @@ export default function App() {
   }, [selectedSession])
 
   // 세션 메타 업데이트 (공통 헬퍼)
+  // 순차 호출(예: BulkSummarizeModal) 시 stale closure로 인한 덮어쓰기를 막기 위해
+  // functional setState 안에서 최신 metadata 스냅샷을 만들고 그 결과를 IPC로 영속화한다.
   const applyMetaUpdate = async (
     sessionId: string,
-    updates: { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string }
+    updates: { customName?: string; tags?: string[]; isDeleted?: boolean; isFavorited?: boolean; isPinned?: boolean; projectId?: string; summary?: string; summaryAt?: string }
   ) => {
-    const newMeta = { ...metadata, [sessionId]: { ...metadata[sessionId], ...updates } }
-    setMetadata(newMeta)
-    const updated = sessions.map(s => s.id === sessionId ? { ...s, ...updates } : s)
-    setSessions(updated)
-    if (selectedSession?.id === sessionId) {
-      setSelectedSession(prev => prev ? { ...prev, ...updates } : prev)
-    }
-    if (window.electronAPI) await window.electronAPI.saveMetadata(newMeta)
+    let nextMeta: typeof metadata = metadata
+    setMetadata(prev => {
+      nextMeta = { ...prev, [sessionId]: { ...prev[sessionId], ...updates } }
+      return nextMeta
+    })
+    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, ...updates } : s))
+    setSelectedSession(prev => prev?.id === sessionId ? { ...prev, ...updates } : prev)
+    if (window.electronAPI) await window.electronAPI.saveMetadata(nextMeta)
   }
 
   const updateSessionMeta = (sessionId: string, updates: { customName?: string; tags?: string[]; isFavorited?: boolean; isPinned?: boolean }) =>
     applyMetaUpdate(sessionId, updates)
+
+  // 벌크 메타 업데이트 — 선택된 세션 전체에 동일 변경사항 적용 (단일 저장)
+  const bulkApplyMeta = async (ids: Set<string>, updates: { isFavorited?: boolean; isPinned?: boolean }) => {
+    const prevMeta = metadata
+    const prevSessions = sessions
+    const newMeta = { ...metadata }
+    const updated = sessions.map(s => {
+      if (!ids.has(s.id) || s.isDeleted) return s  // 삭제된 세션 제외
+      newMeta[s.id] = { ...newMeta[s.id], ...updates }
+      return { ...s, ...updates }
+    })
+    setMetadata(newMeta)
+    setSessions(updated)
+    if (selectedSession && ids.has(selectedSession.id)) {
+      setSelectedSession(prev => prev ? { ...prev, ...updates } : prev)
+    }
+    if (window.electronAPI) {
+      const res = await window.electronAPI.saveMetadata(newMeta).catch(() => ({ success: false }))
+      if (!res.success) {
+        // 저장 실패 시 이전 상태로 롤백
+        setMetadata(prevMeta)
+        setSessions(prevSessions)
+        setError('메타데이터 저장에 실패했습니다.')
+      }
+    }
+  }
+
+  const bulkPin = async () => {
+    const selected = activeSessions.filter(s => selectedSessionIds.has(s.id))
+    const allPinned = selected.length > 0 && selected.every(s => s.isPinned)
+    await bulkApplyMeta(selectedSessionIds, { isPinned: !allPinned })
+  }
+
+  const bulkFavorite = async () => {
+    const selected = activeSessions.filter(s => selectedSessionIds.has(s.id))
+    const allFavorited = selected.length > 0 && selected.every(s => s.isFavorited)
+    await bulkApplyMeta(selectedSessionIds, { isFavorited: !allFavorited })
+  }
+
+  // 일괄 AI 요약 — BulkSummarizeModal에서 세션별로 호출
+  const persistSummary = async (sessionId: string, summary: string) => {
+    await applyMetaUpdate(sessionId, { summary, summaryAt: new Date().toISOString() })
+  }
 
   // 소프트 삭제
   const deleteSession = async (sessionId: string) => {
@@ -536,6 +610,9 @@ export default function App() {
             onSaveAsWorkspace={() => setShowSaveWorkspaceModal(true)}
             onClearSelection={() => setSelectedSessionIds(new Set())}
             onSaveActiveAsWorkspace={saveActiveAsWorkspace}
+            onBulkPin={bulkPin}
+            onBulkFavorite={bulkFavorite}
+            onBulkSummarize={() => setShowBulkSummarizeModal(true)}
           />
         )}
 
@@ -543,6 +620,7 @@ export default function App() {
           {activeView === 'sessions' && selectedSession ? (
             <SessionDetail
               session={sessionsWithAutoProject.find(s => s.id === selectedSession.id) ?? selectedSession}
+              allSessions={activeSessions}
               settings={settings}
               isActive={activeSessionIds.has(selectedSession.sessionId)}
               onUpdateMeta={updateSessionMeta}
@@ -604,6 +682,15 @@ export default function App() {
           sessionCount={selectedSessionIds.size}
           onSave={createWorkspace}
           onClose={() => setShowSaveWorkspaceModal(false)}
+        />
+      )}
+
+      {showBulkSummarizeModal && (
+        <BulkSummarizeModal
+          sessions={activeSessions.filter(s => selectedSessionIds.has(s.id))}
+          aiSummary={settings.aiSummary}
+          onClose={() => setShowBulkSummarizeModal(false)}
+          onSummaryReady={persistSummary}
         />
       )}
     </div>

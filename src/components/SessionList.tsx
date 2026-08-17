@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Search, RefreshCw, Loader2, Trash2, Star, Pin, Layers, Check, X, Zap } from 'lucide-react'
+import { Search, RefreshCw, Loader2, Trash2, Star, Pin, Layers, Check, X, Zap, Sparkles } from 'lucide-react'
 import type { Session } from '../types'
 
 interface Props {
@@ -18,6 +18,29 @@ interface Props {
   onClearSelection: () => void
   activeSessionIds: Set<string>
   onSaveActiveAsWorkspace: () => void
+  onBulkPin: () => void
+  onBulkFavorite: () => void
+  onBulkSummarize: () => void
+}
+
+// ─── 검색 하이라이트 ─────────────────────────────────────
+function Highlight({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>
+  try {
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const parts = text.split(new RegExp(`(${escaped})`, 'gi'))
+    return (
+      <>
+        {parts.map((part, i) =>
+          part.toLowerCase() === query.toLowerCase()
+            ? <mark key={i} className="search-highlight">{part}</mark>
+            : <span key={i}>{part}</span>
+        )}
+      </>
+    )
+  } catch {
+    return <>{text}</>
+  }
 }
 
 export default function SessionList({
@@ -36,8 +59,20 @@ export default function SessionList({
   onClearSelection,
   activeSessionIds,
   onSaveActiveAsWorkspace,
+  onBulkPin,
+  onBulkFavorite,
+  onBulkSummarize,
 }: Props) {
   const grouped = useMemo(() => groupByDate(sessions), [sessions])
+
+  // 검색어에서 연산자 제외한 순수 텍스트만 추출 (하이라이트용)
+  const plainQuery = useMemo(() => {
+    const q = searchQuery.trim()
+    if (!q) return ''
+    // regex:/content: 연산자면 하이라이트 전체 스킵 (regex 패턴이 남으면 오작동)
+    if (/\b(content|regex):\S+/.test(q)) return ''
+    return q.replace(/\w+:\S+/g, '').trim()
+  }, [searchQuery])
 
   return (
     <div className="w-80 flex flex-col border-r border-border bg-surface-soft shrink-0">
@@ -81,16 +116,37 @@ export default function SessionList({
 
       {/* 멀티셀렉트 액션바 */}
       {selectedSessionIds.size > 0 && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-brand-50 border-b border-brand-100">
+        <div className="flex items-center gap-1.5 px-3 py-2 bg-brand-50 border-b border-brand-100">
           <span className="text-xs text-brand-700 font-medium flex-1">
             {selectedSessionIds.size}개 선택됨
           </span>
+          <button
+            onClick={onBulkPin}
+            className="flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-ink-secondary bg-surface-base hover:bg-surface-subtle border border-border text-xs rounded-lg transition-colors"
+            title="핀 토글"
+          >
+            <Pin size={11} />
+          </button>
+          <button
+            onClick={onBulkFavorite}
+            className="flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-ink-secondary bg-surface-base hover:bg-surface-subtle border border-border text-xs rounded-lg transition-colors"
+            title="즐겨찾기 토글"
+          >
+            <Star size={11} />
+          </button>
+          <button
+            onClick={onBulkSummarize}
+            className="flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-brand-600 bg-surface-base hover:bg-brand-50 border border-border text-xs rounded-lg transition-colors"
+            title="AI 일괄 요약"
+          >
+            <Sparkles size={11} />
+          </button>
           <button
             onClick={onSaveAsWorkspace}
             className="flex items-center gap-1 px-2.5 py-1 bg-brand-500 text-white text-xs font-semibold rounded-lg hover:bg-brand-600 transition-colors"
           >
             <Layers size={11} />
-            워크스페이스로 저장
+            저장
           </button>
           <button
             onClick={onClearSelection}
@@ -131,6 +187,7 @@ export default function SessionList({
                   onDelete={() => onDelete(session.id)}
                   onToggleSelect={() => onToggleSelect(session.id)}
                   relativeTime={formatRelativeTime(session.lastActivity)}
+                  highlight={plainQuery}
                 />
               ))}
             </div>
@@ -151,6 +208,7 @@ function SessionItem({
   onDelete,
   onToggleSelect,
   relativeTime,
+  highlight,
 }: {
   session: Session
   isSelected: boolean
@@ -160,6 +218,7 @@ function SessionItem({
   onDelete: () => void
   onToggleSelect: () => void
   relativeTime: string
+  highlight: string
 }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const displayTitle = session.customName || session.preview.slice(0, 60) || session.sessionId
@@ -236,10 +295,12 @@ function SessionItem({
               {session.isFavorited && <Star size={10} className="text-amber-400 shrink-0" fill="currentColor" />}
               <p className={`text-sm font-medium truncate leading-snug ${
                 isSelected ? 'text-brand-700' : 'text-ink-primary'
-              }`}>{displayTitle}</p>
+              }`}><Highlight text={displayTitle} query={highlight} /></p>
             </div>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-ink-muted truncate flex-1">{projectName}</span>
+              <span className="text-xs text-ink-muted truncate flex-1">
+                <Highlight text={projectName} query={highlight} />
+              </span>
               <span className="text-xs text-ink-faint shrink-0">{relativeTime}</span>
             </div>
             {session.tags.length > 0 && (
