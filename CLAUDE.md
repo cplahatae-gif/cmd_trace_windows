@@ -27,18 +27,28 @@ cmdtrace-windows/
 ├── src/
 │   ├── App.tsx        ← Global state, routing, search operators
 │   ├── types.ts       ← Shared TypeScript types
+│   ├── hooks/
+│   │   └── useDarkMode.ts        ← Dark mode toggle + persistence
 │   └── components/
-│       ├── TitleBar.tsx      ← Frameless window title bar
-│       ├── Sidebar.tsx       ← Nav icons + tag filter (w-16)
-│       ├── SessionList.tsx   ← Session list + search + date groups (w-80)
-│       ├── SessionDetail.tsx ← Detail header + tabs (대화/인사이트)
-│       ├── MessageView.tsx   ← Chat bubble + avatar layout
-│       ├── InsightsView.tsx  ← Token/tool/model usage stats
-│       ├── Dashboard.tsx     ← Stats cards + 30-day chart + project pie
-│       ├── SettingsPanel.tsx ← Settings card layout
-│       ├── TrashView.tsx     ← Soft-deleted sessions + restore
-│       ├── ProjectsView.tsx  ← Project CRUD + drag-drop session assignment
-│       └── ProjectModal.tsx  ← Create/edit project modal (8-color picker)
+│       ├── TitleBar.tsx           ← Frameless window title bar
+│       ├── Sidebar.tsx            ← Nav icons + tag filter (w-16)
+│       ├── SessionList.tsx        ← Session list + search + date groups (w-80)
+│       ├── SessionDetail.tsx      ← Detail header + tabs (대화/인사이트)
+│       ├── SessionDiffView.tsx    ← Session diff comparison view
+│       ├── DiffPickerModal.tsx    ← Session picker for diff comparison
+│       ├── MessageView.tsx        ← Chat bubble + avatar layout
+│       ├── InsightsView.tsx       ← Token/tool/model usage stats
+│       ├── Dashboard.tsx          ← Stats cards + 30-day chart + project pie
+│       ├── SettingsPanel.tsx      ← Settings card layout
+│       ├── TrashView.tsx          ← Soft-deleted sessions + restore
+│       ├── ProjectsView.tsx       ← Project CRUD + drag-drop session assignment
+│       ├── ProjectDetailView.tsx  ← Single project detail view
+│       ├── ProjectModal.tsx       ← Create/edit project modal (8-color picker)
+│       ├── ProjectStatusBadge.tsx ← Project status indicator badge
+│       ├── WorkspacesView.tsx     ← Workspace snapshot list
+│       ├── WorkspaceModal.tsx     ← Create/edit workspace modal
+│       ├── BulkSummarizeModal.tsx ← Multi-session bulk AI summary modal
+│       └── ObsidianImportModal.tsx ← Obsidian project-note import modal
 ├── dist/              ← Renderer build output
 ├── dist-electron/     ← Electron main build output
 └── package.json
@@ -86,14 +96,23 @@ All Electron IPC goes through `window.electronAPI` (contextBridge). Handlers in 
 
 Key IPC channels:
 - `sessions:load` — parse JSONL files from Claude/OpenCode directories
-- `sessions:loadMessages` — load full messages for a session
-- `sessions:loadInsights` — compute token/tool/model statistics
-- `sessions:resumeInTerminal` — spawn Windows Terminal (wt) / PowerShell
+- `sessions:getActive` — detect actively-running sessions (WMI process scan)
+- `sessions:searchContent` — full-text/regex search across session content
+- `session:messages` — load full messages for a session
+- `session:insights` — compute token/tool/model statistics
+- `session:resume` — spawn Windows Terminal (wt) / PowerShell / cmd with `claude -r` / `opencode -r`
+- `session:resetPanes` — reset Windows Terminal pane layout before batch restore
+- `session:export` — file save dialog + write MD/JSON/HTML
+- `session:summarize` — AI summary generation (Anthropic/OpenAI)
+- `workspaces:load` / `workspaces:save` — read/write cmdtrace-workspaces.json
+- `workspaces:restoreAll` — batch-restore a saved workspace into Windows Terminal panes
 - `metadata:load` / `metadata:save` — read/write cmdtrace-meta.json
 - `settings:load` / `settings:save` — read/write cmdtrace-settings.json
 - `projects:load` / `projects:save` — read/write cmdtrace-projects.json
-- `workspaces:load` / `workspaces:save` — read/write cmdtrace-workspaces.json
-- `session:export` — file save dialog + write MD/JSON/HTML
+- `apiKey:save` / `apiKey:hasKey` / `apiKey:delete` — safeStorage-backed API key management
+- `usage:load` — ccusage burn-rate usage data
+- `obsidian:searchNote` / `obsidian:openNote` / `obsidian:testConnection` — Obsidian vault lookup/connection
+- `obsidian:scanImportCandidates` / `obsidian:backfillCmdtraceId` / `obsidian:upsertProjectNote` — Obsidian project-note import/sync
 - `shell:openFolder` — open project folder in Explorer
 
 ### Security
